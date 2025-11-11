@@ -12,62 +12,29 @@ from .csv_parsers import parse_agents_csv, parse_demanda_csv, CSVParseError
 
 def load_agents(filepath: str) -> List[Agent]:
     """
-    Load agents from CSV or JSON file (auto-detected by extension).
+    Load agents from CSV file.
 
-    CSV format (long):
-        id,nombre,dia,bloque
-        A001,Juan Pérez,0,14
-        A001,Juan Pérez,0,15
+    CSV format:
+        id,nombre
+        A001,Juan Pérez
+        A002,María García
         ...
 
-    JSON format:
-        [
-            {
-                "id": "A001",
-                "nombre": "Juan Pérez",
-                "disponibilidad": [
-                    {"day": 0, "block": 0},
-                    {"day": 0, "block": 1},
-                    ...
-                ]
-            },
-            ...
-        ]
+    Each row represents one agent (available 24/7 by default).
     """
     file_ext = Path(filepath).suffix.lower()
 
     if file_ext == '.csv':
-        # Load CSV format
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
         try:
             return parse_agents_csv(content)
         except CSVParseError as e:
             raise ValueError(f"Error al cargar agentes desde CSV: {str(e)}")
-
-    elif file_ext == '.json':
-        # Load JSON format (legacy)
-        with open(filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        agents = []
-        for agent_data in data:
-            disponibilidad = [
-                TimeBlock(day=tb['day'], block=tb['block'])
-                for tb in agent_data.get('disponibilidad', [])
-            ]
-            agents.append(Agent(
-                id=agent_data['id'],
-                nombre=agent_data['nombre'],
-                disponibilidad=disponibilidad
-            ))
-
-        return agents
-
     else:
         raise ValueError(
             f"Formato de archivo no soportado: {file_ext}. "
-            "Use .csv o .json"
+            "Use .csv"
         )
 
 

@@ -30,11 +30,10 @@ class Agent:
     """Represents a shift agent."""
     id: str
     nombre: str
-    disponibilidad: List[TimeBlock] = field(default_factory=list)
 
     def is_available(self, day: int, block: int) -> bool:
-        """Check if agent is available at given time."""
-        return TimeBlock(day, block) in self.disponibilidad
+        """Check if agent is available at given time. Always returns True (24/7 availability)."""
+        return True
 
 
 @dataclass

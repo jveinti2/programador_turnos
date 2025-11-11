@@ -1,0 +1,848 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Shift Optimizer API",
+    "description": "API for optimizing call center shift assignments using constraint programming",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Health check endpoint.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate-schedule": {
+      "post": {
+        "summary": "Generate Schedule",
+        "description": "Generate shift schedule using CP-SAT solver.\n\nUses data/agentes.csv and data/demanda.csv with config/reglas.yaml.\nPerforms deficit analysis first, then runs solver if feasible.\n\n**No Request Body Required** - Uses files from data/ directory.\n\n**Example Response (Success):**\n```json\n{\n  \"status\": \"OPTIMAL\",\n  \"agentes_disponibles\": 8,\n  \"agentes_faltantes\": 0,\n  \"cobertura_por_dia\": [\n    {\n      \"dia\": 0,\n      \"demanda\": 57,\n      \"cobertura\": 57\n    },\n    {\n      \"dia\": 1,\n      \"demanda\": 57,\n      \"cobertura\": 57\n    }\n  ]\n}\n```\n\n**Example Response (Insufficient Coverage):**\n```json\n{\n  \"status\": \"insufficient_coverage\",\n  \"message\": \"No hay suficientes agentes para cubrir la demanda\",\n  \"deficit_analysis\": {\n    \"has_deficit\": true,\n    \"has_critical_gaps\": true,\n    \"total_deficit_hours\": 15.5,\n    \"gaps\": [\n      {\n        \"day\": 6,\n        \"day_name\": \"Domingo\",\n        \"start_time\": \"07:00\",\n        \"end_time\": \"22:30\",\n        \"required_agents\": 3,\n        \"available_agents\": 0,\n        \"deficit\": 3\n      }\n    ]\n  },\n  \"recommendation\": {\n    \"message\": \"Se necesitan 3 agentes adicionales (CRÍTICO)\",\n    \"additional_agents_needed\": 3,\n    \"problematic_days\": [\"Domingo\"],\n    \"severity\": \"critical\"\n  }\n}\n```\n\nReturns:\n    Schedule summary with status and coverage information\n\nRaises:\n    404: Required files not found\n    500: Optimization failed",
+        "operationId": "generate_schedule_generate_schedule_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Generate Schedule Generate Schedule Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/optimize-schedule-llm": {
+      "post": {
+        "summary": "Optimize Schedule Llm",
+        "description": "Post-process and improve existing schedule using LLM.\n\nReads output/schedules.json, applies LLM-based optimizations to fix\nconstraint violations or improve quality, and saves the improved schedule.\n\nThis endpoint does NOT return the schedule. Use GET /schedules to retrieve it.",
+        "operationId": "optimize_schedule_llm_optimize_schedule_llm_post",
+        "parameters": [
+          {
+            "name": "temperature_override",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Temperature Override"
+            }
+          },
+          {
+            "name": "custom_instructions",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom Instructions"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/update-schedule": {
+      "put": {
+        "summary": "Update Schedule",
+        "description": "Manually update schedule.\n\nReceives complete schedule and overwrites output/schedules.json.\n\n**Request Body (JSON):**\n```json\n[\n  {\n    \"id\": \"A001\",\n    \"name\": \"Juan Pérez\",\n    \"schedule\": {\n      \"lunes\": {\n        \"start\": \"07:30\",\n        \"end\": \"16:00\",\n        \"break\": [\n          {\n            \"start\": \"12:30\",\n            \"end\": \"12:45\"\n          }\n        ],\n        \"disconnected\": []\n      }\n    }\n  }\n]\n```\n\n**Example Response:**\n```json\n{\n  \"status\": \"success\",\n  \"message\": \"Schedule updated successfully\",\n  \"statistics\": {\n    \"total_agents\": 8,\n    \"total_shifts\": 30\n  }\n}\n```\n\nReturns:\n    Success message with statistics\n\nRaises:\n    400: Invalid schedule format\n    500: Failed to write file",
+        "operationId": "update_schedule_update_schedule_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array",
+                "title": "Schedule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Schedule Update Schedule Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/schedules": {
+      "get": {
+        "summary": "Get Schedules",
+        "description": "Get all agent schedules.\n\nReturns the complete schedule from output/schedules.json which must be\ngenerated first by calling /generate-schedule.\n\n**No Request Body Required**\n\n**Example Response:**\n```json\n[\n  {\n    \"id\": \"A001\",\n    \"name\": \"Juan Pérez\",\n    \"schedule\": {\n      \"lunes\": {\n        \"start\": \"07:30\",\n        \"end\": \"16:00\",\n        \"break\": [\n          {\n            \"start\": \"12:30\",\n            \"end\": \"12:45\"\n          }\n        ],\n        \"disconnected\": [\n          {\n            \"start\": \"13:30\",\n            \"end\": \"14:00\"\n          }\n        ]\n      },\n      \"martes\": {\n        \"start\": \"08:00\",\n        \"end\": \"17:30\",\n        \"break\": [\n          {\n            \"start\": \"10:30\",\n            \"end\": \"10:45\"\n          }\n        ],\n        \"disconnected\": []\n      }\n    }\n  },\n  {\n    \"id\": \"A002\",\n    \"name\": \"María García\",\n    \"schedule\": {\n      \"lunes\": {\n        \"start\": \"09:00\",\n        \"end\": \"18:00\",\n        \"break\": [],\n        \"disconnected\": []\n      }\n    }\n  }\n]\n```\n\nReturns:\n    List of all agent schedules\n\nRaises:\n    404: Schedules not found (run /generate-schedule first)\n    500: Failed to read schedules",
+        "operationId": "get_schedules_schedules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Get Schedules Schedules Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/schedule/{agent_id}": {
+      "get": {
+        "summary": "Get Agent Schedule",
+        "description": "Get the schedule for a specific agent.\n\nThis endpoint reads the agent's schedule from output/schedules.json\nwhich must be generated first by calling the /optimize endpoint.\n\nArgs:\n    agent_id: The agent's unique identifier (e.g., \"AG001\")\n\nReturns:\n    Agent schedule with shifts for the week\n\nExample:\n    GET /schedule/AG001",
+        "operationId": "get_agent_schedule_schedule__agent_id__get",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Agent Schedule Schedule  Agent Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/get-rules": {
+      "get": {
+        "summary": "Get Rules",
+        "description": "Get current optimization rules configuration from config/reglas.yaml.\n\nReturns the complete configuration as JSON, excluding the read-only\n'time_blocks' section which should never be modified.\n\nReturns:\n    ReglasYAML: Current optimization rules configuration\n\nExample Response:\n    {\n      \"turnos\": {\n        \"duracion_min_horas\": 4,\n        \"duracion_max_horas\": 9,\n        ...\n      },\n      \"pausas_cortas\": {...},\n      \"almuerzo\": {...},\n      \"solver\": {...},\n      \"cobertura\": {...}\n    }",
+        "operationId": "get_rules_get_rules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReglasYAML"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/update-rules": {
+      "post": {
+        "summary": "Update Rules",
+        "description": "Update optimization rules configuration in config/reglas.yaml.\n\nThis endpoint validates the new configuration and overwrites the\nexisting reglas.yaml file. The 'time_blocks' section is preserved\nand never modified.\n\n**Request Body (JSON):**\n```json\n{\n  \"turnos\": {\n    \"duracion_min_horas\": 4,\n    \"duracion_max_horas\": 9,\n    \"duracion_total_max_horas\": 10,\n    \"descanso_entre_turnos_horas\": 8,\n    \"dias_libres_min_por_semana\": 1\n  },\n  \"pausas_cortas\": {\n    \"duracion_minutos\": 15,\n    \"frecuencia_cada_horas\": 3,\n    \"obligatorias\": true,\n    \"separacion_minima_horas\": 2.5,\n    \"prohibir_primera_hora\": true,\n    \"prohibir_ultima_hora\": true,\n    \"maximo_por_turno\": 4\n  },\n  \"almuerzo\": {\n    \"duracion_min_minutos\": 30,\n    \"duracion_max_minutos\": 60,\n    \"obligatorio_si_turno_mayor_a_horas\": 0,\n    \"maximo_por_turno\": 1,\n    \"prohibir_primera_hora\": true,\n    \"prohibir_ultima_hora\": true\n  },\n  \"solver\": {\n    \"timeout_segundos\": 300,\n    \"num_workers\": 8\n  },\n  \"cobertura\": {\n    \"margen_seguridad\": 1.2,\n    \"bloquear_si_deficit\": true\n  }\n}\n```\n\nReturns:\n    Success message with updated configuration\n\nRaises:\n    400: Invalid configuration data\n    500: Failed to write file",
+        "operationId": "update_rules_update_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReglasYAML"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Rules Update Rules Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/get-prompt": {
+      "get": {
+        "summary": "Get Prompt",
+        "description": "Get current system prompt configuration from config/system_prompt.yaml.\n\nReturns the LLM configuration including system prompt text and model parameters.\n\nReturns:\n    SystemPromptConfig: Current system prompt configuration\n\nExample Response:\n    {\n      \"system_prompt\": \"You are an AI assistant...\",\n      \"model\": \"gpt-4\",\n      \"temperature\": 0.7,\n      \"top_p\": 1.0,\n      \"frecuency_penalty\": 0.0,\n      \"presence_penalty\": 0.0\n    }",
+        "operationId": "get_prompt_get_prompt_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemPromptConfig"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/update-prompt": {
+      "post": {
+        "summary": "Update Prompt",
+        "description": "Update system prompt configuration in config/system_prompt.yaml.\n\nThis endpoint validates the new configuration and overwrites the\nexisting system_prompt.yaml file.\n\n**Request Body (JSON):**\n```json\n{\n  \"system_prompt\": \"You are an advanced AI assistant...\",\n  \"model\": \"gpt-4\",\n  \"temperature\": 0.7,\n  \"top_p\": 1.0,\n  \"frecuency_penalty\": 0.0,\n  \"presence_penalty\": 0.0\n}\n```\n\n**Field Descriptions:**\n- **system_prompt**: Multi-line text with instructions for the LLM\n- **model**: Model name (e.g., \"gpt-4\", \"gpt-3.5-turbo\")\n- **temperature**: Randomness (0.0 = deterministic, 2.0 = very random)\n- **top_p**: Nucleus sampling (0.0-1.0)\n- **frecuency_penalty**: Penalize frequent tokens (-2.0 to 2.0)\n- **presence_penalty**: Penalize repeated topics (-2.0 to 2.0)\n\nReturns:\n    Success message with updated configuration\n\nRaises:\n    400: Invalid configuration data\n    500: Failed to write file",
+        "operationId": "update_prompt_update_prompt_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemPromptConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Prompt Update Prompt Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/get-agents-csv": {
+      "get": {
+        "summary": "Get Agents Csv",
+        "description": "Get current agents data from data/agentes.csv.\n\nReturns the CSV file content as plain text.\n\n**CSV Format (Simple Format):**\n```csv\nid,nombre\nA001,Juan Pérez\nA002,María García\nA003,Carlos Rodríguez\n...\n```\n\n**Column Descriptions:**\n- **id**: Agent unique identifier (e.g., \"A001\")\n- **nombre**: Agent full name\n\n**Data Model:**\n- Each row represents one agent (available 24/7 by default)\n- One row per agent\n\nReturns:\n    Plain text CSV content\n\nRaises:\n    404: CSV file not found\n    500: Failed to read file",
+        "operationId": "get_agents_csv_get_agents_csv_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/update-agents-csv": {
+      "post": {
+        "summary": "Update Agents Csv",
+        "description": "Update agents data in data/agentes.csv.\n\nThis endpoint validates the CSV format and data, then overwrites the\nexisting agentes.csv file. All agents are considered available 24/7.\n\n**Request Body (text/plain):**\nSend the CSV content as plain text in the request body.\n\n**CSV Format (Simple Format):**\n```\nid,nombre\nA001,Juan Pérez\nA002,María García\nA003,Carlos Rodríguez\n...\n```\n\n**Validation Rules:**\n- Required headers: id, nombre\n- **id**: Non-empty string\n- **nombre**: Non-empty string\n- No duplicate agent IDs\n\n**Example Request (curl):**\n```bash\ncurl -X POST http://localhost:8000/update-agents-csv \\\n  -H \"Content-Type: text/plain\" \\\n  --data-binary @agentes.csv\n```\n\n**Example Request (JavaScript fetch):**\n```javascript\nconst csvContent = \"id,nombre\\nA001,Juan Pérez\\nA002,María García\\n\";\n\nfetch('http://localhost:8000/update-agents-csv', {\n  method: 'POST',\n  headers: { 'Content-Type': 'text/plain' },\n  body: csvContent\n});\n```\n\n**Example Response:**\n```json\n{\n  \"status\": \"success\",\n  \"message\": \"Agents CSV updated successfully\",\n  \"file\": \"data/agentes.csv\",\n  \"statistics\": {\n    \"total_agents\": 8,\n    \"agent_ids\": [\"A001\", \"A002\", \"A003\", \"A004\", \"A005\", \"A006\", \"A007\", \"A008\"]\n  }\n}\n```\n\nReturns:\n    Success message with statistics about uploaded data\n\nRaises:\n    400: Invalid CSV format or data\n    500: Failed to write file",
+        "operationId": "update_agents_csv_update_agents_csv_post",
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string",
+                "title": "Csv Content"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Agents Csv Update Agents Csv Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/get-demand-csv": {
+      "get": {
+        "summary": "Get Demand Csv",
+        "description": "Get current demand data from data/demanda.csv.\n\nReturns the CSV file content as plain text.\n\n**CSV Format (Long Format):**\n```csv\ndia,bloque,agentes_requeridos\n0,14,1\n0,15,1\n0,16,2\n...\n```\n\n**Column Descriptions:**\n- **dia**: Day of week (0=Monday, 6=Sunday)\n- **bloque**: 30-minute time block (0-47, where 0=00:00-00:30, 47=23:30-24:00)\n- **agentes_requeridos**: Number of agents needed in that time block\n\n**Data Model:**\n- Each row represents demand for ONE 30-minute block\n- Only blocks with demand > 0 need to be included (blocks with 0 demand can be omitted)\n\nReturns:\n    Plain text CSV content\n\nRaises:\n    404: CSV file not found\n    500: Failed to read file",
+        "operationId": "get_demand_csv_get_demand_csv_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/update-demand-csv": {
+      "post": {
+        "summary": "Update Demand Csv",
+        "description": "Update demand data in data/demanda.csv.\n\nThis endpoint validates the CSV format and data, then overwrites the\nexisting demanda.csv file.\n\n**Request Body (text/plain):**\nSend the CSV content as plain text in the request body.\n\n**CSV Format (Long Format):**\n```\ndia,bloque,agentes_requeridos\n0,14,1\n0,15,1\n0,16,2\n0,17,2\n...\n```\n\n**Validation Rules:**\n- Required headers: dia, bloque, agentes_requeridos\n- **dia**: Integer between 0-6 (0=Monday, 6=Sunday)\n- **bloque**: Integer between 0-47 (0=00:00, 47=23:30)\n- **agentes_requeridos**: Non-negative integer\n- No duplicate rows (same dia, bloque combination)\n\n**Example Request (curl):**\n```bash\ncurl -X POST http://localhost:8000/update-demand-csv \\\n  -H \"Content-Type: text/plain\" \\\n  --data-binary @demanda.csv\n```\n\n**Example Request (JavaScript fetch):**\n```javascript\nconst csvContent = \"dia,bloque,agentes_requeridos\\n0,14,1\\n0,15,1\\n...\";\n\nfetch('http://localhost:8000/update-demand-csv', {\n  method: 'POST',\n  headers: { 'Content-Type': 'text/plain' },\n  body: csvContent\n});\n```\n\n**Example Response:**\n```json\n{\n  \"status\": \"success\",\n  \"message\": \"Demand CSV updated successfully\",\n  \"file\": \"data/demanda.csv\",\n  \"statistics\": {\n    \"total_demand_blocks\": 143,\n    \"total_agents_required\": 347,\n    \"days_with_demand\": 7\n  }\n}\n```\n\nReturns:\n    Success message with statistics about uploaded data\n\nRaises:\n    400: Invalid CSV format or data\n    500: Failed to write file",
+        "operationId": "update_demand_csv_update_demand_csv_post",
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string",
+                "title": "Csv Content"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Demand Csv Update Demand Csv Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AlmuerzoConfig": {
+        "properties": {
+          "duracion_min_minutos": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 0.0,
+            "title": "Duracion Min Minutos",
+            "description": "Minimum lunch duration"
+          },
+          "duracion_max_minutos": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 0.0,
+            "title": "Duracion Max Minutos",
+            "description": "Maximum lunch duration"
+          },
+          "obligatorio_si_turno_mayor_a_horas": {
+            "type": "number",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Obligatorio Si Turno Mayor A Horas",
+            "description": "Mandatory if shift > X hours (0 = never)"
+          },
+          "maximo_por_turno": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Maximo Por Turno",
+            "description": "Maximum lunch breaks per shift"
+          },
+          "prohibir_primera_hora": {
+            "type": "boolean",
+            "title": "Prohibir Primera Hora",
+            "description": "Prohibit lunch in first hour?"
+          },
+          "prohibir_ultima_hora": {
+            "type": "boolean",
+            "title": "Prohibir Ultima Hora",
+            "description": "Prohibit lunch in last hour?"
+          }
+        },
+        "type": "object",
+        "required": [
+          "duracion_min_minutos",
+          "duracion_max_minutos",
+          "obligatorio_si_turno_mayor_a_horas",
+          "maximo_por_turno",
+          "prohibir_primera_hora",
+          "prohibir_ultima_hora"
+        ],
+        "title": "AlmuerzoConfig",
+        "description": "Lunch break rules (30-60 min)."
+      },
+      "CoberturaConfig": {
+        "properties": {
+          "margen_seguridad": {
+            "type": "number",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Margen Seguridad",
+            "description": "Recommended safety margin (e.g., 1.2 = 20% extra)"
+          },
+          "bloquear_si_deficit": {
+            "type": "boolean",
+            "title": "Bloquear Si Deficit",
+            "description": "Block optimization if critical deficit exists?"
+          }
+        },
+        "type": "object",
+        "required": [
+          "margen_seguridad",
+          "bloquear_si_deficit"
+        ],
+        "title": "CoberturaConfig",
+        "description": "Coverage analysis configuration."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "PausasCortasConfig": {
+        "properties": {
+          "duracion_minutos": {
+            "type": "integer",
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Duracion Minutos",
+            "description": "Break duration in minutes"
+          },
+          "frecuencia_cada_horas": {
+            "type": "number",
+            "maximum": 12.0,
+            "minimum": 0.5,
+            "title": "Frecuencia Cada Horas",
+            "description": "Frequency: 1 break every X hours"
+          },
+          "obligatorias": {
+            "type": "boolean",
+            "title": "Obligatorias",
+            "description": "Are breaks mandatory?"
+          },
+          "separacion_minima_horas": {
+            "type": "number",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Separacion Minima Horas",
+            "description": "Minimum separation between breaks"
+          },
+          "prohibir_primera_hora": {
+            "type": "boolean",
+            "title": "Prohibir Primera Hora",
+            "description": "Prohibit breaks in first hour?"
+          },
+          "prohibir_ultima_hora": {
+            "type": "boolean",
+            "title": "Prohibir Ultima Hora",
+            "description": "Prohibit breaks in last hour?"
+          },
+          "maximo_por_turno": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Maximo Por Turno",
+            "description": "Maximum breaks per shift"
+          }
+        },
+        "type": "object",
+        "required": [
+          "duracion_minutos",
+          "frecuencia_cada_horas",
+          "obligatorias",
+          "separacion_minima_horas",
+          "prohibir_primera_hora",
+          "prohibir_ultima_hora",
+          "maximo_por_turno"
+        ],
+        "title": "PausasCortasConfig",
+        "description": "Short break rules (15-min breaks)."
+      },
+      "ReglasYAML": {
+        "properties": {
+          "turnos": {
+            "$ref": "#/components/schemas/TurnosConfig"
+          },
+          "pausas_cortas": {
+            "$ref": "#/components/schemas/PausasCortasConfig"
+          },
+          "almuerzo": {
+            "$ref": "#/components/schemas/AlmuerzoConfig"
+          },
+          "solver": {
+            "$ref": "#/components/schemas/SolverConfig"
+          },
+          "cobertura": {
+            "$ref": "#/components/schemas/CoberturaConfig"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turnos",
+          "pausas_cortas",
+          "almuerzo",
+          "solver",
+          "cobertura"
+        ],
+        "title": "ReglasYAML",
+        "description": "Complete optimization rules configuration.",
+        "example": {
+          "almuerzo": {
+            "duracion_max_minutos": 60,
+            "duracion_min_minutos": 30,
+            "maximo_por_turno": 1,
+            "obligatorio_si_turno_mayor_a_horas": 0,
+            "prohibir_primera_hora": true,
+            "prohibir_ultima_hora": true
+          },
+          "cobertura": {
+            "bloquear_si_deficit": true,
+            "margen_seguridad": 1.2
+          },
+          "pausas_cortas": {
+            "duracion_minutos": 15,
+            "frecuencia_cada_horas": 3,
+            "maximo_por_turno": 4,
+            "obligatorias": true,
+            "prohibir_primera_hora": true,
+            "prohibir_ultima_hora": true,
+            "separacion_minima_horas": 2.5
+          },
+          "solver": {
+            "num_workers": 8,
+            "timeout_segundos": 300
+          },
+          "turnos": {
+            "descanso_entre_turnos_horas": 8,
+            "dias_libres_min_por_semana": 1,
+            "duracion_max_horas": 9,
+            "duracion_min_horas": 4,
+            "duracion_total_max_horas": 10
+          }
+        }
+      },
+      "SolverConfig": {
+        "properties": {
+          "timeout_segundos": {
+            "type": "integer",
+            "maximum": 3600.0,
+            "minimum": 1.0,
+            "title": "Timeout Segundos",
+            "description": "Maximum execution time in seconds"
+          },
+          "num_workers": {
+            "type": "integer",
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Num Workers",
+            "description": "Number of parallel workers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timeout_segundos",
+          "num_workers"
+        ],
+        "title": "SolverConfig",
+        "description": "Solver parameters."
+      },
+      "SystemPromptConfig": {
+        "properties": {
+          "system_prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "System Prompt",
+            "description": "Multi-line system prompt text"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model",
+            "description": "LLM model name (e.g., gpt-4)"
+          },
+          "temperature": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "description": "Temperature parameter"
+          },
+          "top_p": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Top P",
+            "description": "Top-p parameter"
+          },
+          "frecuency_penalty": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": -2.0,
+            "title": "Frecuency Penalty",
+            "description": "Frequency penalty"
+          },
+          "presence_penalty": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": -2.0,
+            "title": "Presence Penalty",
+            "description": "Presence penalty"
+          }
+        },
+        "type": "object",
+        "required": [
+          "system_prompt",
+          "model",
+          "temperature",
+          "top_p",
+          "frecuency_penalty",
+          "presence_penalty"
+        ],
+        "title": "SystemPromptConfig",
+        "description": "System prompt configuration for LLM.",
+        "example": {
+          "frecuency_penalty": 0.0,
+          "model": "gpt-4",
+          "presence_penalty": 0.0,
+          "system_prompt": "You are an AI assistant...",
+          "temperature": 0.7,
+          "top_p": 1.0
+        }
+      },
+      "TurnosConfig": {
+        "properties": {
+          "duracion_min_horas": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Duracion Min Horas",
+            "description": "Minimum effective work hours"
+          },
+          "duracion_max_horas": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Duracion Max Horas",
+            "description": "Maximum effective work hours"
+          },
+          "duracion_total_max_horas": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Duracion Total Max Horas",
+            "description": "Maximum total shift span"
+          },
+          "descanso_entre_turnos_horas": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 0.0,
+            "title": "Descanso Entre Turnos Horas",
+            "description": "Minimum rest between shifts"
+          },
+          "dias_libres_min_por_semana": {
+            "type": "integer",
+            "maximum": 7.0,
+            "minimum": 0.0,
+            "title": "Dias Libres Min Por Semana",
+            "description": "Minimum days off per week"
+          }
+        },
+        "type": "object",
+        "required": [
+          "duracion_min_horas",
+          "duracion_max_horas",
+          "duracion_total_max_horas",
+          "descanso_entre_turnos_horas",
+          "dias_libres_min_por_semana"
+        ],
+        "title": "TurnosConfig",
+        "description": "Shift duration and timing rules."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

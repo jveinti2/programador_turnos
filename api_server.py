@@ -163,6 +163,66 @@ async def generate_schedule() -> Dict[str, Any]:
 
     Uses data/agentes.csv and data/demanda.csv with config/reglas.yaml.
     Performs deficit analysis first, then runs solver if feasible.
+
+    **No Request Body Required** - Uses files from data/ directory.
+
+    **Example Response (Success):**
+    ```json
+    {
+      "status": "OPTIMAL",
+      "agentes_disponibles": 8,
+      "agentes_faltantes": 0,
+      "cobertura_por_dia": [
+        {
+          "dia": 0,
+          "demanda": 57,
+          "cobertura": 57
+        },
+        {
+          "dia": 1,
+          "demanda": 57,
+          "cobertura": 57
+        }
+      ]
+    }
+    ```
+
+    **Example Response (Insufficient Coverage):**
+    ```json
+    {
+      "status": "insufficient_coverage",
+      "message": "No hay suficientes agentes para cubrir la demanda",
+      "deficit_analysis": {
+        "has_deficit": true,
+        "has_critical_gaps": true,
+        "total_deficit_hours": 15.5,
+        "gaps": [
+          {
+            "day": 6,
+            "day_name": "Domingo",
+            "start_time": "07:00",
+            "end_time": "22:30",
+            "required_agents": 3,
+            "available_agents": 0,
+            "deficit": 3
+          }
+        ]
+      },
+      "recommendation": {
+        "message": "Se necesitan 3 agentes adicionales (CRÍTICO)",
+        "additional_agents_needed": 3,
+        "problematic_days": ["Domingo"],
+        "severity": "critical"
+      }
+    }
+    ```
+
+    Returns:
+        Schedule summary with status and coverage information
+
+    Raises:
+        404: Required files not found
+        500: Optimization failed
     """
     try:
         agents_path = "data/agentes.csv"
@@ -362,6 +422,48 @@ async def update_schedule(schedule: List[Dict[str, Any]] = Body(...)) -> Dict[st
     Manually update schedule.
 
     Receives complete schedule and overwrites output/schedules.json.
+
+    **Request Body (JSON):**
+    ```json
+    [
+      {
+        "id": "A001",
+        "name": "Juan Pérez",
+        "schedule": {
+          "lunes": {
+            "start": "07:30",
+            "end": "16:00",
+            "break": [
+              {
+                "start": "12:30",
+                "end": "12:45"
+              }
+            ],
+            "disconnected": []
+          }
+        }
+      }
+    ]
+    ```
+
+    **Example Response:**
+    ```json
+    {
+      "status": "success",
+      "message": "Schedule updated successfully",
+      "statistics": {
+        "total_agents": 8,
+        "total_shifts": 30
+      }
+    }
+    ```
+
+    Returns:
+        Success message with statistics
+
+    Raises:
+        400: Invalid schedule format
+        500: Failed to write file
     """
     try:
         schedules_path = Path("output/schedules.json")
@@ -412,22 +514,65 @@ async def get_schedules() -> List[Dict[str, Any]]:
     Returns the complete schedule from output/schedules.json which must be
     generated first by calling /generate-schedule.
 
+    **No Request Body Required**
+
+    **Example Response:**
+    ```json
+    [
+      {
+        "id": "A001",
+        "name": "Juan Pérez",
+        "schedule": {
+          "lunes": {
+            "start": "07:30",
+            "end": "16:00",
+            "break": [
+              {
+                "start": "12:30",
+                "end": "12:45"
+              }
+            ],
+            "disconnected": [
+              {
+                "start": "13:30",
+                "end": "14:00"
+              }
+            ]
+          },
+          "martes": {
+            "start": "08:00",
+            "end": "17:30",
+            "break": [
+              {
+                "start": "10:30",
+                "end": "10:45"
+              }
+            ],
+            "disconnected": []
+          }
+        }
+      },
+      {
+        "id": "A002",
+        "name": "María García",
+        "schedule": {
+          "lunes": {
+            "start": "09:00",
+            "end": "18:00",
+            "break": [],
+            "disconnected": []
+          }
+        }
+      }
+    ]
+    ```
+
     Returns:
         List of all agent schedules
 
-    Example Response:
-        [
-          {
-            "id": "A001",
-            "name": "Juan Pérez",
-            "schedule": {
-              "Lunes": {...},
-              "Martes": {...},
-              ...
-            }
-          },
-          ...
-        ]
+    Raises:
+        404: Schedules not found (run /generate-schedule first)
+        500: Failed to read schedules
     """
     try:
         schedules_path = Path("output/schedules.json")
@@ -798,27 +943,26 @@ async def update_prompt(config: SystemPromptConfig) -> Dict[str, Any]:
 @app.get("/get-agents-csv", response_class=PlainTextResponse)
 async def get_agents_csv() -> str:
     """
-    Get current agents availability data from data/agentes.csv.
+    Get current agents data from data/agentes.csv.
 
     Returns the CSV file content as plain text.
 
-    **CSV Format (Long Format):**
+    **CSV Format (Simple Format):**
     ```csv
-    id,nombre,dia,bloque
-    A001,Juan Pérez,0,12
-    A001,Juan Pérez,0,13
+    id,nombre
+    A001,Juan Pérez
+    A002,María García
+    A003,Carlos Rodríguez
     ...
     ```
 
     **Column Descriptions:**
     - **id**: Agent unique identifier (e.g., "A001")
     - **nombre**: Agent full name
-    - **dia**: Day of week (0=Monday, 6=Sunday)
-    - **bloque**: 30-minute time block (0-47, where 0=00:00-00:30, 47=23:30-24:00)
 
     **Data Model:**
-    - Each row represents ONE available 30-minute block for an agent
-    - Multiple rows per agent (one row per available time block)
+    - Each row represents one agent (available 24/7 by default)
+    - One row per agent
 
     Returns:
         Plain text CSV content
@@ -854,30 +998,28 @@ async def get_agents_csv() -> str:
 @app.post("/update-agents-csv")
 async def update_agents_csv(csv_content: str = Body(..., media_type="text/plain")) -> Dict[str, Any]:
     """
-    Update agents availability data in data/agentes.csv.
+    Update agents data in data/agentes.csv.
 
     This endpoint validates the CSV format and data, then overwrites the
-    existing agentes.csv file.
+    existing agentes.csv file. All agents are considered available 24/7.
 
     **Request Body (text/plain):**
     Send the CSV content as plain text in the request body.
 
-    **CSV Format (Long Format):**
+    **CSV Format (Simple Format):**
     ```
-    id,nombre,dia,bloque
-    A001,Juan Pérez,0,12
-    A001,Juan Pérez,0,13
-    A002,María López,1,20
+    id,nombre
+    A001,Juan Pérez
+    A002,María García
+    A003,Carlos Rodríguez
     ...
     ```
 
     **Validation Rules:**
-    - Required headers: id, nombre, dia, bloque
+    - Required headers: id, nombre
     - **id**: Non-empty string
-    - **nombre**: Non-empty string (must be consistent for same id)
-    - **dia**: Integer between 0-6 (0=Monday, 6=Sunday)
-    - **bloque**: Integer between 0-47 (0=00:00, 47=23:30)
-    - No duplicate rows (same id, dia, bloque combination)
+    - **nombre**: Non-empty string
+    - No duplicate agent IDs
 
     **Example Request (curl):**
     ```bash
@@ -888,13 +1030,26 @@ async def update_agents_csv(csv_content: str = Body(..., media_type="text/plain"
 
     **Example Request (JavaScript fetch):**
     ```javascript
-    const csvContent = "id,nombre,dia,bloque\\nA001,Juan Pérez,0,12\\n...";
+    const csvContent = "id,nombre\\nA001,Juan Pérez\\nA002,María García\\n";
 
     fetch('http://localhost:8000/update-agents-csv', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: csvContent
     });
+    ```
+
+    **Example Response:**
+    ```json
+    {
+      "status": "success",
+      "message": "Agents CSV updated successfully",
+      "file": "data/agentes.csv",
+      "statistics": {
+        "total_agents": 8,
+        "agent_ids": ["A001", "A002", "A003", "A004", "A005", "A006", "A007", "A008"]
+      }
+    }
     ```
 
     Returns:
@@ -920,7 +1075,6 @@ async def update_agents_csv(csv_content: str = Body(..., media_type="text/plain"
             f.write(csv_content)
 
         # Calculate statistics
-        total_blocks = sum(len(agent.disponibilidad) for agent in agents)
         agent_ids = [agent.id for agent in agents]
 
         return {
@@ -929,7 +1083,6 @@ async def update_agents_csv(csv_content: str = Body(..., media_type="text/plain"
             "file": str(csv_path),
             "statistics": {
                 "total_agents": len(agents),
-                "total_availability_blocks": total_blocks,
                 "agent_ids": agent_ids
             }
         }
@@ -940,6 +1093,173 @@ async def update_agents_csv(csv_content: str = Body(..., media_type="text/plain"
         raise HTTPException(
             status_code=500,
             detail=f"Failed to update agents CSV: {str(e)}"
+        )
+
+
+@app.get("/get-demand-csv", response_class=PlainTextResponse)
+async def get_demand_csv() -> str:
+    """
+    Get current demand data from data/demanda.csv.
+
+    Returns the CSV file content as plain text.
+
+    **CSV Format (Long Format):**
+    ```csv
+    dia,bloque,agentes_requeridos
+    0,14,1
+    0,15,1
+    0,16,2
+    ...
+    ```
+
+    **Column Descriptions:**
+    - **dia**: Day of week (0=Monday, 6=Sunday)
+    - **bloque**: 30-minute time block (0-47, where 0=00:00-00:30, 47=23:30-24:00)
+    - **agentes_requeridos**: Number of agents needed in that time block
+
+    **Data Model:**
+    - Each row represents demand for ONE 30-minute block
+    - Only blocks with demand > 0 need to be included (blocks with 0 demand can be omitted)
+
+    Returns:
+        Plain text CSV content
+
+    Raises:
+        404: CSV file not found
+        500: Failed to read file
+    """
+    try:
+        csv_path = Path("data/demanda.csv")
+
+        if not csv_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Demand CSV file not found: data/demanda.csv"
+            )
+
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        return content
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read demand CSV: {str(e)}"
+        )
+
+
+@app.post("/update-demand-csv")
+async def update_demand_csv(csv_content: str = Body(..., media_type="text/plain")) -> Dict[str, Any]:
+    """
+    Update demand data in data/demanda.csv.
+
+    This endpoint validates the CSV format and data, then overwrites the
+    existing demanda.csv file.
+
+    **Request Body (text/plain):**
+    Send the CSV content as plain text in the request body.
+
+    **CSV Format (Long Format):**
+    ```
+    dia,bloque,agentes_requeridos
+    0,14,1
+    0,15,1
+    0,16,2
+    0,17,2
+    ...
+    ```
+
+    **Validation Rules:**
+    - Required headers: dia, bloque, agentes_requeridos
+    - **dia**: Integer between 0-6 (0=Monday, 6=Sunday)
+    - **bloque**: Integer between 0-47 (0=00:00, 47=23:30)
+    - **agentes_requeridos**: Non-negative integer
+    - No duplicate rows (same dia, bloque combination)
+
+    **Example Request (curl):**
+    ```bash
+    curl -X POST http://localhost:8000/update-demand-csv \\
+      -H "Content-Type: text/plain" \\
+      --data-binary @demanda.csv
+    ```
+
+    **Example Request (JavaScript fetch):**
+    ```javascript
+    const csvContent = "dia,bloque,agentes_requeridos\\n0,14,1\\n0,15,1\\n...";
+
+    fetch('http://localhost:8000/update-demand-csv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: csvContent
+    });
+    ```
+
+    **Example Response:**
+    ```json
+    {
+      "status": "success",
+      "message": "Demand CSV updated successfully",
+      "file": "data/demanda.csv",
+      "statistics": {
+        "total_demand_blocks": 143,
+        "total_agents_required": 347,
+        "days_with_demand": 7
+      }
+    }
+    ```
+
+    Returns:
+        Success message with statistics about uploaded data
+
+    Raises:
+        400: Invalid CSV format or data
+        500: Failed to write file
+    """
+    try:
+        # Validate CSV using existing parser
+        try:
+            from shift_optimizer.csv_parsers import parse_demanda_csv
+            demanda = parse_demanda_csv(csv_content)
+        except CSVParseError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV validation error: {str(e)}"
+            )
+
+        # Write CSV to file
+        csv_path = Path("data/demanda.csv")
+        with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+            f.write(csv_content)
+
+        # Calculate statistics
+        total_demand = sum(sum(day) for day in demanda.data)
+        days_with_demand = sum(1 for day in demanda.data if sum(day) > 0)
+
+        # Count non-zero blocks
+        total_blocks = sum(
+            1 for day in demanda.data for block in day if block > 0
+        )
+
+        return {
+            "status": "success",
+            "message": "Demand CSV updated successfully",
+            "file": str(csv_path),
+            "statistics": {
+                "total_demand_blocks": total_blocks,
+                "total_agents_required": total_demand,
+                "days_with_demand": days_with_demand
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update demand CSV: {str(e)}"
         )
 
 

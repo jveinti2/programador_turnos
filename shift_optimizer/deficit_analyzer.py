@@ -80,15 +80,8 @@ class DeficitAnalyzer:
         Returns:
             7x48 matrix where [day][block] = number of available agents
         """
-        matrix = [[0 for _ in range(48)] for _ in range(7)]
-
-        for agent in self.agents:
-            for time_block in agent.disponibilidad:
-                day = time_block.day
-                block = time_block.block
-                if 0 <= day < 7 and 0 <= block < 48:
-                    matrix[day][block] += 1
-
+        num_agents = len(self.agents)
+        matrix = [[num_agents for _ in range(48)] for _ in range(7)]
         return matrix
 
     def analyze(self) -> DeficitReport:

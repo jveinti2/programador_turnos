@@ -1,5 +1,5 @@
 {
-  "status": "OPTIMAL",
+  "status": "DEFICIT",
   "agentes_disponibles": 8,
   "agentes_faltantes": 0,
   "cobertura_por_dia": [
@@ -26,7 +26,7 @@
     {
       "dia": 4,
       "demanda": 57,
-      "cobertura": 57
+      "cobertura": 54
     },
     {
       "dia": 5,

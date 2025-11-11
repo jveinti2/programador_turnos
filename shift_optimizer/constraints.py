@@ -42,19 +42,15 @@ class Constraint(ABC):
 
 
 class AvailabilityConstraint(Constraint):
-    """Agents can only work when available."""
+    """Agents can only work when available (no-op since all agents are 24/7)."""
 
     @property
     def name(self) -> str:
         return "Agent Availability"
 
     def apply(self, optimizer: 'ShiftOptimizer') -> None:
-        """Agents can only work during their available time blocks."""
-        for agent in optimizer.agents:
-            for day in range(7):
-                for block in range(48):
-                    if not agent.is_available(day, block):
-                        optimizer.model.Add(optimizer.x[agent.id, day, block] == 0)
+        """No constraints needed - all agents available 24/7."""
+        pass
 
 
 class ShiftDurationConstraint(Constraint):

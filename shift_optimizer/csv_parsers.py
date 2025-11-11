@@ -16,15 +16,15 @@ class CSVParseError(Exception):
 
 def parse_agents_csv(content: str) -> List[Agent]:
     """
-    Parse agents from CSV in long format.
+    Parse agents from CSV in simple format.
 
     Expected format:
-        id,nombre,dia,bloque
-        A001,Juan Pérez,0,14
-        A001,Juan Pérez,0,15
+        id,nombre
+        A001,Juan Pérez
+        A002,María García
         ...
 
-    Each row represents ONE available 30-minute block for an agent.
+    Each row represents one agent (available 24/7 by default).
 
     Args:
         content: CSV file content as string
@@ -41,7 +41,7 @@ def parse_agents_csv(content: str) -> List[Agent]:
         raise CSVParseError(f"Failed to parse CSV: {str(e)}")
 
     # Validate headers
-    required_headers = {'id', 'nombre', 'dia', 'bloque'}
+    required_headers = {'id', 'nombre'}
     if not reader.fieldnames:
         raise CSVParseError("CSV file is empty or has no headers")
 
@@ -50,9 +50,9 @@ def parse_agents_csv(content: str) -> List[Agent]:
         missing = required_headers - actual_headers
         raise CSVParseError(f"Missing required headers: {missing}")
 
-    # Parse rows and group by agent
-    agents_data: Dict[str, Dict] = {}
-    seen_blocks: Dict[str, Set[tuple]] = {}
+    # Parse rows
+    agents = []
+    seen_ids: Set[str] = set()
     row_num = 1
 
     for row in reader:
@@ -61,73 +61,23 @@ def parse_agents_csv(content: str) -> List[Agent]:
         # Validate non-empty fields
         agent_id = row.get('id', '').strip()
         nombre = row.get('nombre', '').strip()
-        dia_str = row.get('dia', '').strip()
-        bloque_str = row.get('bloque', '').strip()
 
         if not agent_id:
             raise CSVParseError(f"Row {row_num}: 'id' cannot be empty")
         if not nombre:
             raise CSVParseError(f"Row {row_num}: 'nombre' cannot be empty")
-        if not dia_str:
-            raise CSVParseError(f"Row {row_num}: 'dia' cannot be empty")
-        if not bloque_str:
-            raise CSVParseError(f"Row {row_num}: 'bloque' cannot be empty")
 
-        # Parse integers
-        try:
-            dia = int(dia_str)
-        except ValueError:
-            raise CSVParseError(f"Row {row_num}: 'dia' must be an integer, got '{dia_str}'")
+        # Check for duplicate IDs
+        if agent_id in seen_ids:
+            raise CSVParseError(f"Row {row_num}: Duplicate agent ID: {agent_id}")
+        seen_ids.add(agent_id)
 
-        try:
-            bloque = int(bloque_str)
-        except ValueError:
-            raise CSVParseError(f"Row {row_num}: 'bloque' must be an integer, got '{bloque_str}'")
+        # Create agent (available 24/7 by default)
+        agents.append(Agent(id=agent_id, nombre=nombre))
 
-        # Validate ranges
-        if not (0 <= dia <= 6):
-            raise CSVParseError(f"Row {row_num}: 'dia' must be between 0-6 (Monday-Sunday), got {dia}")
-        if not (0 <= bloque <= 47):
-            raise CSVParseError(f"Row {row_num}: 'bloque' must be between 0-47 (30-min blocks), got {bloque}")
-
-        # Check for duplicate blocks
-        if agent_id not in seen_blocks:
-            seen_blocks[agent_id] = set()
-        block_key = (dia, bloque)
-        if block_key in seen_blocks[agent_id]:
-            raise CSVParseError(f"Row {row_num}: Duplicate block for agent {agent_id}: day={dia}, block={bloque}")
-        seen_blocks[agent_id].add(block_key)
-
-        # Group by agent
-        if agent_id not in agents_data:
-            agents_data[agent_id] = {
-                'id': agent_id,
-                'nombre': nombre,
-                'disponibilidad': []
-            }
-        else:
-            # Verify nombre consistency
-            if agents_data[agent_id]['nombre'] != nombre:
-                raise CSVParseError(
-                    f"Row {row_num}: Inconsistent name for agent {agent_id}. "
-                    f"Expected '{agents_data[agent_id]['nombre']}', got '{nombre}'"
-                )
-
-        # Add time block
-        agents_data[agent_id]['disponibilidad'].append(TimeBlock(day=dia, block=bloque))
-
-    # Convert to Agent objects
-    if not agents_data:
+    # Verify we have at least one agent
+    if not agents:
         raise CSVParseError("No agent data found in CSV")
-
-    agents = [
-        Agent(
-            id=data['id'],
-            nombre=data['nombre'],
-            disponibilidad=data['disponibilidad']
-        )
-        for data in agents_data.values()
-    ]
 
     return agents
 
