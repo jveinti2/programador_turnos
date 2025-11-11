@@ -1,101 +1,29 @@
-# Shift Optimization Rules Configuration
-# Structure optimized for frontend modification and clarity
-
-# === TURNOS (Shifts) ===
 turnos:
-  # Duración mínima de trabajo efectivo (horas)
-  # Trabajo efectivo = tiempo trabajando + pausas cortas (NO incluye almuerzo)
-  duracion_min_horas: 4
-
-  # Duración máxima de trabajo efectivo (horas)
+  duracion_min_horas: 6
   duracion_max_horas: 9
-
-  # Duración máxima total del turno desde inicio hasta fin (horas)
-  # Incluye trabajo, pausas y almuerzo
   duracion_total_max_horas: 10
-
-  # Horas de descanso obligatorio entre el fin de un turno y el inicio del siguiente
   descanso_entre_turnos_horas: 8
-
-  # Días libres mínimos por semana
   dias_libres_min_por_semana: 1
-
-# === PAUSAS CORTAS (15-minute breaks) ===
 pausas_cortas:
-  # Duración de cada pausa en minutos (fijo)
   duracion_minutos: 15
-
-  # Frecuencia: cada cuántas horas de trabajo se requiere una pausa
-  # Ejemplo: 3 = una pausa cada 3 horas de trabajo
-  frecuencia_cada_horas: 3
-
-  # ¿Las pausas son obligatorias?
-  # true = el solver DEBE asignar pausas según la frecuencia
-  # false = las pausas son opcionales (el solver decide)
+  frecuencia_cada_horas: 3.0
   obligatorias: true
-
-  # Separación mínima entre pausas consecutivas (horas)
-  # Evita que se agrupen muchas pausas juntas
   separacion_minima_horas: 2.5
-
-  # Protección de tiempo productivo
-  # true = NO permitir pausas en la primera hora del turno
   prohibir_primera_hora: true
-
-  # true = NO permitir pausas en la última hora del turno
   prohibir_ultima_hora: true
-
-  # Máximo de pausas permitidas por turno
-  # Se calcula automáticamente como: ceil(duracion_max_horas / frecuencia_cada_horas)
-  # Para 9h y frecuencia de 3h: max = 3 pausas
   maximo_por_turno: 4
-
-# === ALMUERZO (Lunch break / Hueco) ===
 almuerzo:
-  # Duración mínima del almuerzo en minutos
   duracion_min_minutos: 30
-
-  # Duración máxima del almuerzo en minutos
   duracion_max_minutos: 60
-
-  # ¿El almuerzo es obligatorio si el turno supera cierta duración?
-  # 0 = nunca obligatorio (opcional)
-  # Cualquier número > 0 = obligatorio si el turno supera esa cantidad de horas
-  obligatorio_si_turno_mayor_a_horas: 0
-
-  # Máximo de almuerzos por turno (normalmente 1)
+  obligatorio_si_turno_mayor_a_horas: 0.0
   maximo_por_turno: 1
-
-  # Protección de tiempo productivo
-  # true = NO permitir almuerzo en la primera hora del turno
   prohibir_primera_hora: true
-
-  # true = NO permitir almuerzo en la última hora del turno
   prohibir_ultima_hora: true
-
-# === CONFIGURACIÓN DEL SOLVER ===
 solver:
-  # Tiempo máximo de ejecución en segundos
   timeout_segundos: 300
-
-  # Número de workers paralelos para el solver
-  # Recomendado: número de cores de CPU disponibles
   num_workers: 8
-
-# === COBERTURA Y ANÁLISIS DE DÉFICIT ===
 cobertura:
-  # Margen de seguridad recomendado (porcentaje sobre demanda)
-  # Ejemplo: 1.2 = se recomienda 20% más agentes de los estrictamente necesarios
-  # Esto proporciona flexibilidad para satisfacer constraints de calidad
   margen_seguridad: 1.2
-
-  # ¿Bloquear optimización si hay déficit crítico?
-  # true = no optimizar si algún período tiene 0 agentes disponibles
-  # false = intentar optimizar de todos modos (producirá gaps en cobertura)
   bloquear_si_deficit: true
-
-# === BLOQUES DE TIEMPO ===
-# NO MODIFICAR - El sistema usa bloques de 30 minutos (48 bloques por día)
 time_blocks:
   duracion_minutos: 30
-

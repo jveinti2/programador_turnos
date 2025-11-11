@@ -5,68 +5,120 @@ import json
 import csv
 from typing import List
 from datetime import time
+from pathlib import Path
 from .models import Agent, TimeBlock, Demanda, Solution, Shift
+from .csv_parsers import parse_agents_csv, parse_demanda_csv, CSVParseError
 
 
 def load_agents(filepath: str) -> List[Agent]:
     """
-    Load agents from JSON file.
+    Load agents from CSV or JSON file (auto-detected by extension).
 
-    Expected format:
-    [
-        {
-            "id": "A001",
-            "nombre": "Juan Pérez",
-            "disponibilidad": [
-                {"day": 0, "block": 0},
-                {"day": 0, "block": 1},
-                ...
-            ]
-        },
+    CSV format (long):
+        id,nombre,dia,bloque
+        A001,Juan Pérez,0,14
+        A001,Juan Pérez,0,15
         ...
-    ]
-    """
-    with open(filepath, 'r', encoding='utf-8') as f:
-        data = json.load(f)
 
-    agents = []
-    for agent_data in data:
-        disponibilidad = [
-            TimeBlock(day=tb['day'], block=tb['block'])
-            for tb in agent_data.get('disponibilidad', [])
+    JSON format:
+        [
+            {
+                "id": "A001",
+                "nombre": "Juan Pérez",
+                "disponibilidad": [
+                    {"day": 0, "block": 0},
+                    {"day": 0, "block": 1},
+                    ...
+                ]
+            },
+            ...
         ]
-        agents.append(Agent(
-            id=agent_data['id'],
-            nombre=agent_data['nombre'],
-            disponibilidad=disponibilidad
-        ))
+    """
+    file_ext = Path(filepath).suffix.lower()
 
-    return agents
+    if file_ext == '.csv':
+        # Load CSV format
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        try:
+            return parse_agents_csv(content)
+        except CSVParseError as e:
+            raise ValueError(f"Error al cargar agentes desde CSV: {str(e)}")
+
+    elif file_ext == '.json':
+        # Load JSON format (legacy)
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        agents = []
+        for agent_data in data:
+            disponibilidad = [
+                TimeBlock(day=tb['day'], block=tb['block'])
+                for tb in agent_data.get('disponibilidad', [])
+            ]
+            agents.append(Agent(
+                id=agent_data['id'],
+                nombre=agent_data['nombre'],
+                disponibilidad=disponibilidad
+            ))
+
+        return agents
+
+    else:
+        raise ValueError(
+            f"Formato de archivo no soportado: {file_ext}. "
+            "Use .csv o .json"
+        )
 
 
 def load_demanda(filepath: str) -> Demanda:
     """
-    Load demand from JSON file.
+    Load demand from CSV or JSON file (auto-detected by extension).
 
-    Expected format:
-    [
-        [0, 0, 0, ..., 5, 10, 15, ...],  # Day 0 (48 blocks of 30min)
-        [0, 0, 0, ..., 5, 10, 15, ...],  # Day 1 (48 blocks of 30min)
+    CSV format (long):
+        dia,bloque,agentes_requeridos
+        0,14,5
+        0,15,10
         ...
-    ]
+
+    JSON format:
+        [
+            [0, 0, 0, ..., 5, 10, 15, ...],  # Day 0 (48 blocks of 30min)
+            [0, 0, 0, ..., 5, 10, 15, ...],  # Day 1 (48 blocks of 30min)
+            ...
+        ]
     """
-    with open(filepath, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    file_ext = Path(filepath).suffix.lower()
 
-    # Validate format
-    if len(data) != 7:
-        raise ValueError(f"Expected 7 days, got {len(data)}")
+    if file_ext == '.csv':
+        # Load CSV format
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        try:
+            return parse_demanda_csv(content)
+        except CSVParseError as e:
+            raise ValueError(f"Error al cargar demanda desde CSV: {str(e)}")
 
-    for day_idx, day_data in enumerate(data):
-        if len(day_data) != 48:
-            raise ValueError(f"Day {day_idx}: Expected 48 blocks (30min each), got {len(day_data)}")
+    elif file_ext == '.json':
+        # Load JSON format (legacy)
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
-    return Demanda(data=data)
+        # Validate format
+        if len(data) != 7:
+            raise ValueError(f"Expected 7 days, got {len(data)}")
+
+        for day_idx, day_data in enumerate(data):
+            if len(day_data) != 48:
+                raise ValueError(f"Day {day_idx}: Expected 48 blocks (30min each), got {len(day_data)}")
+
+        return Demanda(data=data)
+
+    else:
+        raise ValueError(
+            f"Formato de archivo no soportado: {file_ext}. "
+            "Use .csv o .json"
+        )
 
 
 def export_turnos_csv(solution: Solution, filepath: str) -> None:

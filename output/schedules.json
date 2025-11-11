@@ -4,83 +4,30 @@
     "name": "Juan Pérez",
     "schedule": {
       "lunes": {
-        "start": "06:00",
-        "end": "16:00",
+        "start": "08:30",
+        "end": "17:30",
         "break": [
-          {
-            "start": "06:00",
-            "end": "06:15"
-          },
           {
             "start": "09:00",
             "end": "09:15"
           },
           {
-            "start": "14:30",
-            "end": "14:45"
-          }
-        ],
-        "disconnected": []
-      },
-      "martes": {
-        "start": "06:00",
-        "end": "16:00",
-        "break": [
-          {
-            "start": "06:00",
-            "end": "06:15"
+            "start": "13:30",
+            "end": "13:45"
           },
           {
-            "start": "13:00",
-            "end": "13:15"
+            "start": "17:00",
+            "end": "17:15"
           }
         ],
         "disconnected": [
           {
-            "start": "07:30",
-            "end": "13:00"
+            "start": "14:00",
+            "end": "15:00"
           }
         ]
       },
-      "miercoles": {
-        "start": "06:00",
-        "end": "15:30",
-        "break": [
-          {
-            "start": "06:00",
-            "end": "06:15"
-          },
-          {
-            "start": "10:00",
-            "end": "10:15"
-          },
-          {
-            "start": "15:00",
-            "end": "15:15"
-          }
-        ],
-        "disconnected": []
-      },
-      "jueves": {
-        "start": "06:00",
-        "end": "16:00",
-        "break": [
-          {
-            "start": "06:00",
-            "end": "06:15"
-          },
-          {
-            "start": "09:30",
-            "end": "09:45"
-          },
-          {
-            "start": "15:30",
-            "end": "15:45"
-          }
-        ],
-        "disconnected": []
-      },
-      "viernes": {
+      "martes": {
         "start": "06:00",
         "end": "14:30",
         "break": [
@@ -97,7 +44,75 @@
             "end": "14:15"
           }
         ],
+        "disconnected": [
+          {
+            "start": "08:30",
+            "end": "09:00"
+          }
+        ]
+      },
+      "miercoles": {
+        "start": "07:00",
+        "end": "16:30",
+        "break": [
+          {
+            "start": "10:00",
+            "end": "10:15"
+          },
+          {
+            "start": "13:00",
+            "end": "13:15"
+          },
+          {
+            "start": "16:00",
+            "end": "16:15"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "07:30",
+            "end": "14:30"
+          }
+        ]
+      },
+      "jueves": {
+        "start": "06:30",
+        "end": "14:30",
+        "break": [
+          {
+            "start": "06:30",
+            "end": "06:45"
+          },
+          {
+            "start": "09:30",
+            "end": "09:45"
+          },
+          {
+            "start": "14:00",
+            "end": "14:15"
+          }
+        ],
         "disconnected": []
+      },
+      "viernes": {
+        "start": "06:30",
+        "end": "13:30",
+        "break": [
+          {
+            "start": "06:30",
+            "end": "06:45"
+          },
+          {
+            "start": "13:00",
+            "end": "13:15"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "07:00",
+            "end": "07:30"
+          }
+        ]
       }
     }
   },
@@ -106,42 +121,95 @@
     "name": "María García",
     "schedule": {
       "lunes": {
-        "start": "08:30",
-        "end": "18:30",
+        "start": "07:00",
+        "end": "16:30",
         "break": [
           {
-            "start": "08:30",
-            "end": "08:45"
+            "start": "07:30",
+            "end": "07:45"
           },
           {
             "start": "12:30",
             "end": "12:45"
           },
           {
+            "start": "16:00",
+            "end": "16:15"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "14:30",
+            "end": "15:00"
+          }
+        ]
+      },
+      "martes": {
+        "start": "08:30",
+        "end": "18:30",
+        "break": [
+          {
+            "start": "09:30",
+            "end": "09:45"
+          },
+          {
+            "start": "15:00",
+            "end": "15:15"
+          },
+          {
             "start": "18:00",
             "end": "18:15"
           }
         ],
-        "disconnected": []
+        "disconnected": [
+          {
+            "start": "14:00",
+            "end": "17:00"
+          }
+        ]
       },
-      "martes": {
-        "start": "10:00",
-        "end": "19:00",
+      "miercoles": {
+        "start": "07:00",
+        "end": "13:30",
         "break": [
           {
-            "start": "14:30",
-            "end": "14:45"
+            "start": "07:00",
+            "end": "07:15"
           },
           {
-            "start": "18:30",
-            "end": "18:45"
+            "start": "12:30",
+            "end": "12:45"
           }
         ],
         "disconnected": []
       },
-      "miercoles": {
-        "start": "08:30",
+      "jueves": {
+        "start": "08:00",
         "end": "18:00",
+        "break": [
+          {
+            "start": "08:00",
+            "end": "08:15"
+          },
+          {
+            "start": "12:00",
+            "end": "12:15"
+          },
+          {
+            "start": "15:00",
+            "end": "15:15"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "09:30",
+            "end": "10:00"
+          }
+        ]
+      },
+      "viernes": {
+        "start": "08:00",
+        "end": "16:30",
         "break": [
           {
             "start": "08:30",
@@ -157,41 +225,6 @@
           }
         ],
         "disconnected": []
-      },
-      "jueves": {
-        "start": "10:00",
-        "end": "16:30",
-        "break": [
-          {
-            "start": "12:00",
-            "end": "12:15"
-          },
-          {
-            "start": "16:00",
-            "end": "16:15"
-          }
-        ],
-        "disconnected": []
-      },
-      "viernes": {
-        "start": "09:00",
-        "end": "18:30",
-        "break": [
-          {
-            "start": "09:30",
-            "end": "09:45"
-          },
-          {
-            "start": "18:00",
-            "end": "18:15"
-          }
-        ],
-        "disconnected": [
-          {
-            "start": "13:30",
-            "end": "16:30"
-          }
-        ]
       }
     }
   },
@@ -200,46 +233,16 @@
     "name": "Carlos López",
     "schedule": {
       "lunes": {
-        "start": "09:00",
-        "end": "18:30",
-        "break": [
-          {
-            "start": "09:00",
-            "end": "09:15"
-          },
-          {
-            "start": "15:00",
-            "end": "15:15"
-          },
-          {
-            "start": "18:00",
-            "end": "18:15"
-          }
-        ],
-        "disconnected": []
-      },
-      "martes": {
-        "start": "08:00",
-        "end": "17:30",
-        "break": [
-          {
-            "start": "08:00",
-            "end": "08:15"
-          },
-          {
-            "start": "15:00",
-            "end": "15:15"
-          }
-        ],
-        "disconnected": []
-      },
-      "miercoles": {
         "start": "10:00",
         "end": "20:00",
         "break": [
           {
-            "start": "14:00",
-            "end": "14:15"
+            "start": "13:00",
+            "end": "13:15"
+          },
+          {
+            "start": "16:00",
+            "end": "16:15"
           },
           {
             "start": "19:30",
@@ -248,41 +251,77 @@
         ],
         "disconnected": [
           {
-            "start": "16:00",
+            "start": "18:00",
             "end": "18:30"
           }
         ]
       },
-      "jueves": {
-        "start": "08:30",
-        "end": "18:30",
+      "martes": {
+        "start": "09:30",
+        "end": "18:00",
         "break": [
           {
-            "start": "10:00",
-            "end": "10:15"
+            "start": "14:00",
+            "end": "14:15"
           },
           {
-            "start": "13:30",
-            "end": "13:45"
+            "start": "17:00",
+            "end": "17:15"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "16:30",
+            "end": "17:00"
+          }
+        ]
+      },
+      "miercoles": {
+        "start": "08:30",
+        "end": "14:30",
+        "break": [
+          {
+            "start": "08:30",
+            "end": "08:45"
           },
           {
-            "start": "18:00",
-            "end": "18:15"
+            "start": "14:00",
+            "end": "14:15"
           }
         ],
         "disconnected": []
+      },
+      "jueves": {
+        "start": "08:00",
+        "end": "17:30",
+        "break": [
+          {
+            "start": "08:00",
+            "end": "08:15"
+          },
+          {
+            "start": "16:30",
+            "end": "16:45"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "16:00",
+            "end": "16:30"
+          }
+        ]
       },
       "viernes": {
         "start": "08:30",
         "end": "18:30",
         "break": [
           {
-            "start": "09:00",
-            "end": "09:15"
+            "start": "08:30",
+            "end": "08:45"
           },
           {
-            "start": "13:00",
-            "end": "13:15"
+            "start": "14:00",
+            "end": "14:15"
           },
           {
             "start": "18:00",
@@ -291,8 +330,8 @@
         ],
         "disconnected": [
           {
-            "start": "15:30",
-            "end": "16:00"
+            "start": "16:00",
+            "end": "16:30"
           }
         ]
       }
@@ -304,27 +343,31 @@
     "schedule": {
       "martes": {
         "start": "09:00",
-        "end": "17:30",
+        "end": "18:30",
         "break": [
           {
-            "start": "10:00",
-            "end": "10:15"
+            "start": "11:00",
+            "end": "11:15"
           },
           {
-            "start": "17:00",
-            "end": "17:15"
+            "start": "15:00",
+            "end": "15:15"
+          },
+          {
+            "start": "18:00",
+            "end": "18:15"
           }
         ],
         "disconnected": [
           {
-            "start": "13:00",
-            "end": "14:30"
+            "start": "13:30",
+            "end": "17:30"
           }
         ]
       },
       "miercoles": {
         "start": "09:00",
-        "end": "19:00",
+        "end": "18:30",
         "break": [
           {
             "start": "09:00",
@@ -335,19 +378,39 @@
             "end": "15:15"
           },
           {
-            "start": "18:30",
-            "end": "18:45"
+            "start": "18:00",
+            "end": "18:15"
           }
         ],
         "disconnected": []
       },
       "jueves": {
-        "start": "09:30",
+        "start": "09:00",
+        "end": "16:30",
+        "break": [
+          {
+            "start": "09:00",
+            "end": "09:15"
+          },
+          {
+            "start": "14:30",
+            "end": "14:45"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "13:00",
+            "end": "13:30"
+          }
+        ]
+      },
+      "viernes": {
+        "start": "10:00",
         "end": "19:00",
         "break": [
           {
-            "start": "15:30",
-            "end": "15:45"
+            "start": "10:00",
+            "end": "10:15"
           },
           {
             "start": "18:30",
@@ -356,29 +419,10 @@
         ],
         "disconnected": [
           {
-            "start": "13:00",
-            "end": "14:00"
+            "start": "12:30",
+            "end": "16:30"
           }
         ]
-      },
-      "viernes": {
-        "start": "09:00",
-        "end": "18:00",
-        "break": [
-          {
-            "start": "09:30",
-            "end": "09:45"
-          },
-          {
-            "start": "14:30",
-            "end": "14:45"
-          },
-          {
-            "start": "17:30",
-            "end": "17:45"
-          }
-        ],
-        "disconnected": []
       }
     }
   },
@@ -387,12 +431,76 @@
     "name": "Luis Rodríguez",
     "schedule": {
       "lunes": {
+        "start": "06:00",
+        "end": "13:30",
+        "break": [
+          {
+            "start": "06:00",
+            "end": "06:15"
+          },
+          {
+            "start": "13:00",
+            "end": "13:15"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "06:30",
+            "end": "07:30"
+          }
+        ]
+      },
+      "martes": {
         "start": "07:00",
+        "end": "16:30",
+        "break": [
+          {
+            "start": "09:30",
+            "end": "09:45"
+          },
+          {
+            "start": "16:00",
+            "end": "16:15"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "10:00",
+            "end": "10:30"
+          }
+        ]
+      },
+      "miercoles": {
+        "start": "07:30",
         "end": "17:00",
         "break": [
           {
-            "start": "07:00",
-            "end": "07:15"
+            "start": "07:30",
+            "end": "07:45"
+          },
+          {
+            "start": "13:00",
+            "end": "13:15"
+          },
+          {
+            "start": "16:30",
+            "end": "16:45"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "09:30",
+            "end": "12:30"
+          }
+        ]
+      },
+      "jueves": {
+        "start": "06:00",
+        "end": "16:00",
+        "break": [
+          {
+            "start": "06:00",
+            "end": "06:15"
           },
           {
             "start": "10:00",
@@ -403,9 +511,14 @@
             "end": "13:15"
           }
         ],
-        "disconnected": []
+        "disconnected": [
+          {
+            "start": "12:30",
+            "end": "13:00"
+          }
+        ]
       },
-      "martes": {
+      "viernes": {
         "start": "06:00",
         "end": "15:30",
         "break": [
@@ -414,88 +527,34 @@
             "end": "06:15"
           },
           {
-            "start": "10:00",
-            "end": "10:15"
-          },
-          {
             "start": "15:00",
             "end": "15:15"
           }
         ],
         "disconnected": [
           {
-            "start": "13:30",
-            "end": "14:00"
+            "start": "06:30",
+            "end": "08:00"
           }
         ]
       },
-      "miercoles": {
-        "start": "06:30",
-        "end": "13:30",
+      "sabado": {
+        "start": "08:30",
+        "end": "17:00",
         "break": [
-          {
-            "start": "06:30",
-            "end": "06:45"
-          },
           {
             "start": "09:30",
             "end": "09:45"
-          }
-        ],
-        "disconnected": []
-      },
-      "jueves": {
-        "start": "06:00",
-        "end": "15:00",
-        "break": [
-          {
-            "start": "06:00",
-            "end": "06:15"
           },
           {
-            "start": "14:30",
-            "end": "14:45"
+            "start": "16:30",
+            "end": "16:45"
           }
         ],
         "disconnected": [
           {
-            "start": "07:00",
-            "end": "07:30"
-          }
-        ]
-      },
-      "viernes": {
-        "start": "08:00",
-        "end": "16:00",
-        "break": [
-          {
-            "start": "12:30",
-            "end": "12:45"
-          },
-          {
-            "start": "15:30",
-            "end": "15:45"
-          }
-        ],
-        "disconnected": []
-      },
-      "sabado": {
-        "start": "08:00",
-        "end": "18:00",
-        "break": [
-          {
-            "start": "12:00",
-            "end": "12:15"
-          },
-          {
-            "start": "17:30",
-            "end": "17:45"
-          }
-        ],
-        "disconnected": [
-          {
-            "start": "09:00",
-            "end": "09:30"
+            "start": "14:00",
+            "end": "15:30"
           }
         ]
       }
@@ -506,81 +565,8 @@
     "name": "Patricia Gómez",
     "schedule": {
       "sabado": {
-        "start": "10:00",
-        "end": "20:00",
-        "break": [
-          {
-            "start": "10:00",
-            "end": "10:15"
-          },
-          {
-            "start": "14:30",
-            "end": "14:45"
-          },
-          {
-            "start": "19:30",
-            "end": "19:45"
-          }
-        ],
-        "disconnected": [
-          {
-            "start": "18:00",
-            "end": "19:00"
-          }
-        ]
-      },
-      "domingo": {
-        "start": "09:00",
-        "end": "18:30",
-        "break": [
-          {
-            "start": "09:00",
-            "end": "09:15"
-          },
-          {
-            "start": "12:30",
-            "end": "12:45"
-          },
-          {
-            "start": "18:00",
-            "end": "18:15"
-          }
-        ],
-        "disconnected": []
-      }
-    }
-  },
-  {
-    "id": "A007",
-    "name": "Roberto Silva",
-    "schedule": {
-      "sabado": {
-        "start": "07:00",
-        "end": "15:30",
-        "break": [
-          {
-            "start": "07:00",
-            "end": "07:15"
-          },
-          {
-            "start": "11:30",
-            "end": "11:45"
-          },
-          {
-            "start": "15:00",
-            "end": "15:15"
-          }
-        ],
-        "disconnected": [
-          {
-            "start": "14:00",
-            "end": "14:30"
-          }
-        ]
-      },
-      "domingo": {
-        "start": "08:30",
-        "end": "18:30",
+        "start": "08:00",
+        "end": "17:00",
         "break": [
           {
             "start": "08:30",
@@ -589,16 +575,62 @@
           {
             "start": "14:30",
             "end": "14:45"
-          },
-          {
-            "start": "18:00",
-            "end": "18:15"
           }
         ],
         "disconnected": [
           {
-            "start": "13:30",
-            "end": "16:30"
+            "start": "12:00",
+            "end": "13:30"
+          }
+        ]
+      },
+      "domingo": {
+        "start": "08:30",
+        "end": "17:00",
+        "break": [
+          {
+            "start": "08:30",
+            "end": "08:45"
+          },
+          {
+            "start": "16:30",
+            "end": "16:45"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "09:30",
+            "end": "15:00"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "A007",
+    "name": "Roberto Silva",
+    "schedule": {
+      "domingo": {
+        "start": "08:30",
+        "end": "17:30",
+        "break": [
+          {
+            "start": "08:30",
+            "end": "08:45"
+          },
+          {
+            "start": "12:00",
+            "end": "12:15"
+          },
+          {
+            "start": "17:00",
+            "end": "17:15"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "14:30",
+            "end": "16:00"
           }
         ]
       }
@@ -609,68 +641,95 @@
     "name": "Carmen Ruiz",
     "schedule": {
       "lunes": {
-        "start": "09:00",
-        "end": "19:00",
-        "break": [
-          {
-            "start": "14:00",
-            "end": "14:15"
-          },
-          {
-            "start": "18:30",
-            "end": "18:45"
-          }
-        ],
-        "disconnected": []
-      },
-      "martes": {
-        "start": "09:30",
-        "end": "18:30",
-        "break": [
-          {
-            "start": "14:30",
-            "end": "14:45"
-          },
-          {
-            "start": "18:00",
-            "end": "18:15"
-          }
-        ],
-        "disconnected": []
-      },
-      "sabado": {
-        "start": "08:00",
-        "end": "17:30",
-        "break": [
-          {
-            "start": "08:00",
-            "end": "08:15"
-          },
-          {
-            "start": "12:30",
-            "end": "12:45"
-          },
-          {
-            "start": "17:00",
-            "end": "17:15"
-          }
-        ],
-        "disconnected": []
-      },
-      "domingo": {
         "start": "08:00",
         "end": "18:00",
         "break": [
           {
+            "start": "08:30",
+            "end": "08:45"
+          },
+          {
             "start": "12:00",
             "end": "12:15"
+          },
+          {
+            "start": "16:00",
+            "end": "16:15"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "16:30",
+            "end": "17:00"
+          }
+        ]
+      },
+      "martes": {
+        "start": "09:30",
+        "end": "18:00",
+        "break": [
+          {
+            "start": "09:30",
+            "end": "09:45"
+          },
+          {
+            "start": "13:30",
+            "end": "13:45"
           },
           {
             "start": "17:30",
             "end": "17:45"
           }
         ],
+        "disconnected": [
+          {
+            "start": "12:00",
+            "end": "16:00"
+          }
+        ]
+      },
+      "sabado": {
+        "start": "08:30",
+        "end": "16:30",
+        "break": [
+          {
+            "start": "08:30",
+            "end": "08:45"
+          },
+          {
+            "start": "12:30",
+            "end": "12:45"
+          },
+          {
+            "start": "16:00",
+            "end": "16:15"
+          }
+        ],
         "disconnected": []
+      },
+      "domingo": {
+        "start": "07:00",
+        "end": "16:00",
+        "break": [
+          {
+            "start": "07:00",
+            "end": "07:15"
+          },
+          {
+            "start": "12:30",
+            "end": "12:45"
+          },
+          {
+            "start": "15:30",
+            "end": "15:45"
+          }
+        ],
+        "disconnected": [
+          {
+            "start": "07:30",
+            "end": "10:30"
+          }
+        ]
       }
     }
   }
