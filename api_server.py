@@ -2,12 +2,14 @@
 FastAPI server for shift optimization system.
 """
 
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field, validator
+from openai import OpenAI
 import json
+import re
 import yaml
 import os
 from pathlib import Path
@@ -576,132 +578,53 @@ async def generate_schedule() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Schedule generation failed: {str(e)}")
 
 
+
 @app.post("/optimize-schedule-llm")
-async def optimize_schedule_llm(
-    temperature_override: Optional[float] = None,
-    custom_instructions: Optional[str] = None
-):
-    """
-    Post-process and improve existing schedule using LLM.
-
-    Reads output/schedules.json, applies LLM-based optimizations to fix
-    constraint violations or improve quality, and saves the improved schedule.
-
-    This endpoint does NOT return the schedule. Use GET /schedules to retrieve it.
-    """
+async def optimize_schedule_llm(temperature: float = 0.3):
+    """Ajusta el schedule usando OpenAI basado únicamente en schedule.json."""
     try:
-        schedules_path = Path("output/schedules.json")
-        prompt_config_path = Path("config/system_prompt.yaml")
-        config_path = Path("config/reglas.yaml")
+        schedule_path = Path("output/schedules.json")
+        prompt_path = Path("config/system_prompt.yaml")
 
-        # Verify schedule exists
-        if not schedules_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail="No schedule found. Run /generate-schedule first."
-            )
+        if not schedule_path.exists():
+            raise HTTPException(status_code=404, detail=f"Archivo no encontrado: {schedule_path}")
+        if not prompt_path.exists():
+            raise HTTPException(status_code=404, detail=f"Archivo no encontrado: {prompt_path}")
 
-        # Load schedule
-        with open(schedules_path, 'r', encoding='utf-8') as f:
-            schedule = json.load(f)
+        # Leer schedule y prompt
+        schedule = schedule_path.read_text(encoding="utf-8")
+        system_prompt = yaml.safe_load(prompt_path.read_text(encoding="utf-8")).get("system_prompt", "")
 
-        # Load LLM config
-        if not prompt_config_path.exists():
-            raise HTTPException(status_code=404, detail="LLM config not found: config/system_prompt.yaml")
-
-        with open(prompt_config_path, 'r', encoding='utf-8') as f:
-            llm_config = yaml.safe_load(f)
-
-        # Load rules for context
-        if not config_path.exists():
-            raise HTTPException(status_code=404, detail="Rules config not found: config/reglas.yaml")
-
-        with open(config_path, 'r', encoding='utf-8') as f:
-            reglas = yaml.safe_load(f)
-
-        # Check for OpenAI API key
+        # Verificar API key
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise HTTPException(
-                status_code=500,
-                detail="OPENAI_API_KEY environment variable not set"
-            )
+            raise HTTPException(status_code=500, detail="OPENAI_API_KEY no configurada")
 
-        # Import OpenAI (lazy import to avoid dependency if not used)
-        try:
-            from openai import OpenAI
-        except ImportError:
-            raise HTTPException(
-                status_code=500,
-                detail="OpenAI library not installed. Run: pip install openai"
-            )
-
-        # Build prompt with rules context
-        system_prompt = llm_config.get('system_prompt', '')
-        user_prompt = f"""Analiza el siguiente schedule de turnos y mejóralo post-procesándolo.
-
-OBJETIVO:
-- Validar que se cumplan TODAS las restricciones/reglas
-- Corregir violaciones de constraints si las hay
-- Mejorar la calidad del schedule (mejor distribución de descansos, almuerzos, etc.)
-
-REGLAS DE NEGOCIO (deben cumplirse):
-{json.dumps(reglas, indent=2, ensure_ascii=False)}
-
-SCHEDULE ACTUAL:
-{json.dumps(schedule, indent=2, ensure_ascii=False)}
-
-INSTRUCCIONES ADICIONALES:
-{custom_instructions or 'Verifica constraints y optimiza la distribución de descansos y almuerzos.'}
-
-Retorna SOLO el schedule mejorado en formato JSON idéntico al original (array de agentes)."""
-
-        # Call OpenAI
         client = OpenAI(api_key=api_key)
-        temperature = temperature_override if temperature_override is not None else llm_config.get('temperature', 0.7)
 
+        # Enviar solo el schedule al LLM
         response = client.chat.completions.create(
-            model=llm_config.get('model', 'gpt-4'),
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": f"SCHEDULE:\n{schedule}"}
             ],
-            temperature=temperature,
-            top_p=llm_config.get('top_p', 1.0),
-            frequency_penalty=llm_config.get('frecuency_penalty', 0.0),
-            presence_penalty=llm_config.get('presence_penalty', 0.0)
+            temperature=temperature
         )
 
-        # Extract improved schedule
-        llm_response = response.choices[0].message.content
+        llm_output = response.choices[0].message.content.strip()
 
-        # Try to parse JSON from response
-        try:
-            # Find JSON in response (LLM might add explanatory text)
-            import re
-            json_match = re.search(r'\[.*\]', llm_response, re.DOTALL)
-            if json_match:
-                improved_schedule = json.loads(json_match.group(0))
-            else:
-                improved_schedule = json.loads(llm_response)
-        except json.JSONDecodeError:
-            raise HTTPException(
-                status_code=500,
-                detail=f"LLM response is not valid JSON: {llm_response[:200]}"
-            )
+        # Extraer JSON del output
+        json_match = re.search(r'\[.*\]', llm_output, re.DOTALL)
+        improved_schedule = json.loads(json_match.group(0)) if json_match else json.loads(llm_output)
 
-        # Save improved schedule (overwrite original)
-        with open(schedules_path, 'w', encoding='utf-8') as f:
-            json.dump(improved_schedule, f, ensure_ascii=False, indent=2)
+        # Sobrescribir schedule original
+        schedule_path.write_text(json.dumps(improved_schedule, ensure_ascii=False, indent=2), encoding="utf-8")
 
-        # Return 204 No Content (success but no body)
-        from fastapi.responses import Response
         return Response(status_code=204)
 
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM optimization failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Fallo al optimizar con LLM: {e}")
 
 
 @app.put("/update-schedule")

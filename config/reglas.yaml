@@ -1,16 +1,16 @@
 turnos:
   duracion_min_horas: 4
   duracion_max_horas: 9
-  duracion_total_max_horas: 10
-  descanso_entre_turnos_horas: 8
+  duracion_total_max_horas: 12
+  descanso_entre_turnos_horas: 7
   dias_libres_min_por_semana: 1
-  horas_min_por_semana: 40
-  horas_max_por_semana: 48
+  horas_min_por_semana: 35
+  horas_max_por_semana: 50
 pausas_cortas:
   duracion_minutos: 15
-  frecuencia_cada_horas: 3.0
+  frecuencia_cada_horas: 2.5
   obligatorias: true
-  separacion_minima_horas: 2.5
+  separacion_minima_horas: 2.0
   prohibir_primera_hora: true
   prohibir_ultima_hora: true
   maximo_por_turno: 4
@@ -22,10 +22,10 @@ almuerzo:
   prohibir_primera_hora: true
   prohibir_ultima_hora: true
 solver:
-  timeout_segundos: 600
+  timeout_segundos: 1800
   num_workers: 8
 cobertura:
-  margen_seguridad: 1.2
+  margen_seguridad: 1.0
   bloquear_si_deficit: false
 time_blocks:
   duracion_minutos: 30

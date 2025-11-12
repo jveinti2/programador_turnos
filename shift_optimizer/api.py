@@ -144,39 +144,39 @@ class ShiftOptimizer:
             }
         }
 
-    def optimize_from_data(
-        self,
-        agents: list,
-        demanda: list,
-        timeout: Optional[int] = None
-    ) -> Solution:
-        """
-        Optimize shift assignments from in-memory data.
+    # def optimize_from_data(
+    #     self,
+    #     agents: list,
+    #     demanda: list,
+    #     timeout: Optional[int] = None
+    # ) -> Solution:
+    #     """
+    #     Optimize shift assignments from in-memory data.
 
-        Args:
-            agents: List of Agent objects
-            demanda: Demanda object or list of lists (7 days x 48 blocks)
-            timeout: Solver timeout in seconds (overrides config if provided)
+    #     Args:
+    #         agents: List of Agent objects
+    #         demanda: Demanda object or list of lists (7 days x 48 blocks)
+    #         timeout: Solver timeout in seconds (overrides config if provided)
 
-        Returns:
-            Solution object with assigned shifts
+    #     Returns:
+    #         Solution object with assigned shifts
 
-        Example:
-            from shift_optimizer.models import Agent, Demanda, TimeBlock
+    #     Example:
+    #         from shift_optimizer.models import Agent, Demanda, TimeBlock
 
-            agents = [
-                Agent(id="A001", nombre="Juan", disponibilidad=[...]),
-                Agent(id="A002", nombre="María", disponibilidad=[...])
-            ]
-            demanda = Demanda(data=[[0]*48 for _ in range(7)])
+    #         agents = [
+    #             Agent(id="A001", nombre="Juan", disponibilidad=[...]),
+    #             Agent(id="A002", nombre="María", disponibilidad=[...])
+    #         ]
+    #         demanda = Demanda(data=[[0]*48 for _ in range(7)])
 
-            solution = optimizer.optimize_from_data(agents, demanda)
-        """
-        from .models import Demanda as DemandaModel
+    #         solution = optimizer.optimize_from_data(agents, demanda)
+    #     """
+    #     from .models import Demanda as DemandaModel
 
-        # Convert demanda to Demanda object if needed
-        if isinstance(demanda, list):
-            demanda = DemandaModel(data=demanda)
+    #     # Convert demanda to Demanda object if needed
+    #     if isinstance(demanda, list):
+    #         demanda = DemandaModel(data=demanda)
 
-        solver_timeout = timeout if timeout is not None else self.config.solver.timeout_segundos
-        return optimize_shifts(agents, demanda, solver_timeout, self.config)
+    #     solver_timeout = timeout if timeout is not None else self.config.solver.timeout_segundos
+    #     return optimize_shifts(agents, demanda, solver_timeout, self.config)
