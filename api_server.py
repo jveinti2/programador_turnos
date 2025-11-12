@@ -17,7 +17,8 @@ load_dotenv()
 from shift_optimizer import ShiftOptimizer, DeficitAnalyzer
 from shift_optimizer.utils import load_agents, load_demanda
 from shift_optimizer.config import OptimizationConfig
-from shift_optimizer.csv_parsers import parse_agents_csv, CSVParseError
+from shift_optimizer.csv_parsers import parse_agents_csv, parse_schedules_csv, CSVParseError
+from shift_optimizer.models import TimeBlock
 
 
 # ===== PYDANTIC MODELS FOR CONFIGURATION =====
@@ -149,11 +150,284 @@ app.add_middleware(
 )
 
 
+# ===== HELPER FUNCTIONS =====
+
+def calculate_dashboard_metrics() -> List[Dict[str, Any]]:
+    """
+    Calculate dashboard metrics based on agents, demand, and schedules.
+
+    Returns list of metric objects with title, value, description.
+    Calculates weekly averages for all metrics.
+
+    Raises:
+        HTTPException: If required files are missing
+    """
+    agents_path = Path("data/agentes.csv")
+    demand_path = Path("data/demanda.csv")
+    schedules_path = Path("output/schedules.json")
+    resumen_path = Path("output/resumen.json")
+
+    if not agents_path.exists():
+        raise HTTPException(status_code=404, detail="Agents file not found")
+    if not demand_path.exists():
+        raise HTTPException(status_code=404, detail="Demand file not found")
+    if not schedules_path.exists():
+        raise HTTPException(status_code=404, detail="Schedules not found. Run /generate-schedule first")
+
+    agents = load_agents(str(agents_path))
+    demanda = load_demanda(str(demand_path))
+
+    with open(schedules_path, 'r', encoding='utf-8') as f:
+        schedules = json.load(f)
+
+    total_agentes = len(agents)
+
+    max_demanda = max(
+        demanda.data[day][block]
+        for day in range(7)
+        for block in range(48)
+    )
+
+    total_demanda = 0
+    total_cobertura = 0
+
+    if resumen_path.exists():
+        with open(resumen_path, 'r', encoding='utf-8') as f:
+            resumen = json.load(f)
+
+        for dia_data in resumen.get('cobertura_por_dia', []):
+            total_demanda += dia_data.get('demanda', 0)
+            total_cobertura += dia_data.get('cobertura', 0)
+
+    if total_demanda > 0:
+        nivel_servicio = (total_cobertura / total_demanda) * 100
+    else:
+        nivel_servicio = 100.0
+
+    return [
+        {
+            "title": "Agentes Disponibles",
+            "value": str(total_agentes),
+            "description": "Agentes activos en el sistema"
+        },
+        {
+            "title": "Agentes Requeridos",
+            "value": str(max_demanda),
+            "description": "Según demanda semanal"
+        },
+        {
+            "title": "Nivel de Servicio",
+            "value": f"{nivel_servicio:.1f}%",
+            "description": "Cobertura de demanda"
+        }
+    ]
+
+
+def get_coverage_by_day(day: int) -> List[Dict[str, Any]]:
+    """
+    Get demand and coverage data for a specific day.
+
+    Args:
+        day: Day of week (0=Monday, 6=Sunday)
+
+    Returns:
+        List of 48 time blocks with demand and coverage data
+
+    Raises:
+        HTTPException: If required files are missing or day is invalid
+    """
+    if not 0 <= day <= 6:
+        raise HTTPException(status_code=400, detail="Day must be between 0 (Monday) and 6 (Sunday)")
+
+    demand_path = Path("data/demanda.csv")
+    schedules_path = Path("output/schedules.json")
+    resumen_path = Path("output/resumen.json")
+
+    if not demand_path.exists():
+        raise HTTPException(status_code=404, detail="Demand file not found")
+    if not schedules_path.exists():
+        raise HTTPException(status_code=404, detail="Schedules not found. Run /generate-schedule first")
+
+    demanda = load_demanda(str(demand_path))
+
+    cobertura_matrix = [[0 for _ in range(48)] for _ in range(7)]
+
+    if resumen_path.exists():
+        with open(schedules_path, 'r', encoding='utf-8') as f:
+            schedules = json.load(f)
+
+        day_names = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+
+        for agent in schedules:
+            schedule = agent.get('schedule', {})
+            day_name = day_names[day]
+
+            if day_name in schedule:
+                day_schedule = schedule[day_name]
+
+                if day_schedule and 'start' in day_schedule and 'end' in day_schedule:
+                    start_time = day_schedule['start']
+                    end_time = day_schedule['end']
+
+                    start_hour, start_min = map(int, start_time.split(':'))
+                    end_hour, end_min = map(int, end_time.split(':'))
+
+                    start_block = (start_hour * 60 + start_min) // 30
+                    end_block = (end_hour * 60 + end_min) // 30
+
+                    breaks_set = set()
+                    for brk in day_schedule.get('break', []):
+                        brk_start = brk.get('start', '')
+                        if brk_start:
+                            brk_hour, brk_min = map(int, brk_start.split(':'))
+                            brk_block = (brk_hour * 60 + brk_min) // 30
+                            breaks_set.add(brk_block)
+
+                    disconnected_set = set()
+                    for disc in day_schedule.get('disconnected', []):
+                        disc_start = disc.get('start', '')
+                        disc_end = disc.get('end', '')
+                        if disc_start and disc_end:
+                            disc_start_hour, disc_start_min = map(int, disc_start.split(':'))
+                            disc_end_hour, disc_end_min = map(int, disc_end.split(':'))
+                            disc_start_block = (disc_start_hour * 60 + disc_start_min) // 30
+                            disc_end_block = (disc_end_hour * 60 + disc_end_min) // 30
+                            for blk in range(disc_start_block, disc_end_block):
+                                disconnected_set.add(blk)
+
+                    for block in range(start_block, end_block):
+                        if block not in breaks_set and block not in disconnected_set:
+                            cobertura_matrix[day][block] += 1
+
+    result = []
+    for block in range(48):
+        tb = TimeBlock(day, block)
+        block_time = tb.to_time()
+        time_str = f"{block_time.hour:02d}:{block_time.minute:02d}"
+
+        result.append({
+            "time": time_str,
+            "block": block,
+            "demanda": demanda.data[day][block],
+            "disponibilidad": cobertura_matrix[day][block]
+        })
+
+    return result
+
+
 # API Endpoints
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/dashboard-metrics")
+async def dashboard_metrics() -> List[Dict[str, Any]]:
+    """
+    Get dashboard metrics showing system overview.
+
+    Returns weekly aggregated metrics:
+    - Agentes Disponibles: Total agents in the system
+    - Agentes Requeridos: Peak demand across the week
+    - Nivel de Servicio: Average coverage percentage (coverage/demand * 100)
+
+    Requires that schedules have been generated first with /generate-schedule.
+
+    **Example Response:**
+    ```json
+    [
+      {
+        "title": "Agentes Disponibles",
+        "value": "8",
+        "description": "Agentes activos en el sistema"
+      },
+      {
+        "title": "Agentes Requeridos",
+        "value": "24",
+        "description": "Según demanda semanal"
+      },
+      {
+        "title": "Nivel de Servicio",
+        "value": "95.5%",
+        "description": "Cobertura de demanda"
+      }
+    ]
+    ```
+
+    Returns:
+        List of metric objects with title, value, description, icon, and color
+
+    Raises:
+        404: Required files not found (agents, demand, or schedules)
+        500: Failed to calculate metrics
+    """
+    try:
+        return calculate_dashboard_metrics()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to calculate dashboard metrics: {str(e)}"
+        )
+
+
+@app.get("/demand-coverage-chart")
+async def demand_coverage_chart(day: int) -> List[Dict[str, Any]]:
+    """
+    Get demand and coverage data for a specific day.
+
+    Returns 48 time blocks (30-minute intervals) for the specified day,
+    each containing demand and actual coverage (disponibilidad).
+
+    **Query Parameters:**
+    - **day** (required): Day of week (0=Monday, 1=Tuesday, ..., 6=Sunday)
+
+    **Example Request:**
+    ```
+    GET /demand-coverage-chart?day=0
+    ```
+
+    **Example Response:**
+    ```json
+    [
+      {
+        "time": "00:00",
+        "block": 0,
+        "demanda": 3,
+        "disponibilidad": 2
+      },
+      {
+        "time": "00:30",
+        "block": 1,
+        "demanda": 2,
+        "disponibilidad": 2
+      },
+      ...48 blocks total
+    ]
+    ```
+
+    Args:
+        day: Day of week (0-6, where 0=Monday, 6=Sunday)
+
+    Returns:
+        List of 48 time blocks with demand and coverage data
+
+    Raises:
+        400: Invalid day parameter (must be 0-6)
+        404: Required files not found (demand or schedules)
+        500: Failed to retrieve coverage data
+    """
+    try:
+        return get_coverage_by_day(day)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve coverage chart: {str(e)}"
+        )
 
 
 @app.post("/generate-schedule")
@@ -239,6 +513,20 @@ async def generate_schedule() -> Dict[str, Any]:
         config = OptimizationConfig.from_yaml(config_path)
         agents = load_agents(agents_path)
         demanda = load_demanda(demand_path)
+
+        # STEP 0: Pre-validation - Check if enough agents exist
+        max_demand = max(max(day) for day in demanda.data)
+        min_agents_needed = int(max_demand * config.coverage.margen_seguridad)
+
+        if len(agents) < min_agents_needed:
+            return {
+                "status": "insufficient_agents",
+                "message": f"Se requieren al menos {min_agents_needed} agentes (con margen de seguridad {config.coverage.margen_seguridad}x)",
+                "agents_available": len(agents),
+                "agents_needed": min_agents_needed,
+                "max_demand": max_demand,
+                "recommendation": f"Contratar {min_agents_needed - len(agents)} agentes adicionales"
+            }
 
         # STEP 1: Analyze coverage
         analyzer = DeficitAnalyzer(agents, demanda)
@@ -417,33 +705,65 @@ Retorna SOLO el schedule mejorado en formato JSON idéntico al original (array d
 
 
 @app.put("/update-schedule")
-async def update_schedule(schedule: List[Dict[str, Any]] = Body(...)) -> Dict[str, Any]:
+async def update_schedule(csv_content: str = Body(..., media_type="text/plain")) -> Dict[str, Any]:
     """
-    Manually update schedule.
+    Manually update schedule from CSV.
 
-    Receives complete schedule and overwrites output/schedules.json.
+    Receives schedule in CSV format and overwrites output/schedules.json.
 
-    **Request Body (JSON):**
-    ```json
-    [
-      {
-        "id": "A001",
-        "name": "Juan Pérez",
-        "schedule": {
-          "lunes": {
-            "start": "07:30",
-            "end": "16:00",
-            "break": [
-              {
-                "start": "12:30",
-                "end": "12:45"
-              }
-            ],
-            "disconnected": []
-          }
-        }
-      }
-    ]
+    **Request Body (text/plain):**
+    Send the CSV content as plain text in the request body.
+
+    **CSV Format (Long Format):**
+    ```
+    agent_id,agent_name,day,shift_start,shift_end,break_start,break_end,disconnected_start,disconnected_end
+    A001,Juan Pérez,lunes,08:00,17:30,09:30,09:45,,
+    A001,Juan Pérez,lunes,08:00,17:30,13:00,13:15,,
+    A001,Juan Pérez,martes,09:00,18:30,09:00,09:15,,
+    A002,María García,lunes,10:00,17:00,10:00,10:15,,
+    ...
+    ```
+
+    **Column Descriptions:**
+    - **agent_id**: Agent unique identifier (e.g., "A001")
+    - **agent_name**: Agent full name
+    - **day**: Day name (lunes, martes, miercoles, jueves, viernes, sabado, domingo)
+    - **shift_start**: Shift start time (HH:MM format)
+    - **shift_end**: Shift end time (HH:MM format)
+    - **break_start**: Break start time (optional, leave empty if no break in this row)
+    - **break_end**: Break end time (optional, leave empty if no break in this row)
+    - **disconnected_start**: Disconnected period start time (optional, leave empty if no lunch in this row)
+    - **disconnected_end**: Disconnected period end time (optional, leave empty if no lunch in this row)
+
+    **Data Model:**
+    - Each row can represent: shift info only, shift + break, or shift + disconnected period
+    - Multiple rows with same agent_id + day = same shift with multiple breaks/disconnected periods
+    - Empty break/disconnected fields = no break/disconnected in that row
+
+    **Validation Rules:**
+    - Required headers: agent_id, agent_name, day, shift_start, shift_end
+    - **agent_id**: Non-empty string
+    - **agent_name**: Non-empty string
+    - **day**: One of: lunes, martes, miercoles, jueves, viernes, sabado, domingo
+    - **shift_start**: Non-empty time in HH:MM format
+    - **shift_end**: Non-empty time in HH:MM format
+
+    **Example Request (curl):**
+    ```bash
+    curl -X PUT http://localhost:8000/update-schedule \\
+      -H "Content-Type: text/plain" \\
+      --data-binary @schedules.csv
+    ```
+
+    **Example Request (JavaScript fetch):**
+    ```javascript
+    const csvContent = "agent_id,agent_name,day,shift_start,shift_end,break_start,break_end,disconnected_start,disconnected_end\\nA001,Juan Pérez,lunes,08:00,17:30,09:30,09:45,,\\n";
+
+    fetch('http://localhost:8000/update-schedule', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: csvContent
+    });
     ```
 
     **Example Response:**
@@ -462,24 +782,21 @@ async def update_schedule(schedule: List[Dict[str, Any]] = Body(...)) -> Dict[st
         Success message with statistics
 
     Raises:
-        400: Invalid schedule format
+        400: Invalid CSV format or data
         500: Failed to write file
     """
     try:
+        # Validate CSV using parser
+        try:
+            schedule = parse_schedules_csv(csv_content)
+        except CSVParseError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV validation error: {str(e)}"
+            )
+
+        # Save schedule as JSON
         schedules_path = Path("output/schedules.json")
-
-        # Basic validation
-        if not isinstance(schedule, list):
-            raise HTTPException(status_code=400, detail="Schedule must be an array")
-
-        for agent in schedule:
-            if 'id' not in agent or 'name' not in agent or 'schedule' not in agent:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid agent format. Required: id, name, schedule"
-                )
-
-        # Save schedule
         schedules_path.parent.mkdir(exist_ok=True)
         with open(schedules_path, 'w', encoding='utf-8') as f:
             json.dump(schedule, f, ensure_ascii=False, indent=2)

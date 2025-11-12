@@ -1,42 +1,42 @@
 {
   "status": "DEFICIT",
-  "agentes_disponibles": 8,
-  "agentes_faltantes": 0,
+  "agentes_disponibles": 50,
+  "agentes_faltantes": 1,
   "cobertura_por_dia": [
     {
       "dia": 0,
-      "demanda": 57,
-      "cobertura": 57
+      "demanda": 281,
+      "cobertura": 0
     },
     {
       "dia": 1,
-      "demanda": 57,
-      "cobertura": 57
+      "demanda": 281,
+      "cobertura": 0
     },
     {
       "dia": 2,
-      "demanda": 57,
-      "cobertura": 57
+      "demanda": 281,
+      "cobertura": 0
     },
     {
       "dia": 3,
-      "demanda": 57,
-      "cobertura": 57
+      "demanda": 281,
+      "cobertura": 0
     },
     {
       "dia": 4,
-      "demanda": 57,
-      "cobertura": 54
+      "demanda": 281,
+      "cobertura": 0
     },
     {
       "dia": 5,
-      "demanda": 31,
-      "cobertura": 31
+      "demanda": 281,
+      "cobertura": 0
     },
     {
       "dia": 6,
-      "demanda": 31,
-      "cobertura": 31
+      "demanda": 231,
+      "cobertura": 0
     }
   ]
 }

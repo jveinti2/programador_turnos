@@ -177,3 +177,116 @@ def parse_demanda_csv(content: str) -> Demanda:
         raise CSVParseError("No demand data found in CSV (all values are 0)")
 
     return Demanda(data=demand_matrix)
+
+
+def parse_schedules_csv(content: str) -> List[Dict]:
+    """
+    Parse schedules from CSV in long format.
+
+    Expected format:
+        agent_id,agent_name,day,shift_start,shift_end,break_start,break_end,disconnected_start,disconnected_end
+        A001,Juan Pérez,lunes,08:00,17:30,09:30,09:45,,
+        A001,Juan Pérez,lunes,08:00,17:30,13:00,13:15,,
+        A001,Juan Pérez,martes,09:00,18:30,09:00,09:15,,
+        ...
+
+    Each row represents one break or disconnected period within a shift.
+    Multiple rows with the same agent_id + day = same shift with multiple breaks/disconnected.
+
+    Args:
+        content: CSV file content as string
+
+    Returns:
+        List of agent schedule dictionaries (same format as schedules.json)
+
+    Raises:
+        CSVParseError: If CSV format is invalid or data is inconsistent
+    """
+    try:
+        reader = csv.DictReader(StringIO(content))
+    except Exception as e:
+        raise CSVParseError(f"Failed to parse CSV: {str(e)}")
+
+    # Validate headers
+    required_headers = {'agent_id', 'agent_name', 'day', 'shift_start', 'shift_end'}
+    if not reader.fieldnames:
+        raise CSVParseError("CSV file is empty or has no headers")
+
+    actual_headers = set(reader.fieldnames)
+    if not required_headers.issubset(actual_headers):
+        missing = required_headers - actual_headers
+        raise CSVParseError(f"Missing required headers: {missing}")
+
+    # Build schedule structure
+    agents_data = {}
+    row_num = 1
+
+    for row in reader:
+        row_num += 1
+
+        # Validate required fields
+        agent_id = row.get('agent_id', '').strip()
+        agent_name = row.get('agent_name', '').strip()
+        day = row.get('day', '').strip()
+        shift_start = row.get('shift_start', '').strip()
+        shift_end = row.get('shift_end', '').strip()
+
+        if not agent_id:
+            raise CSVParseError(f"Row {row_num}: 'agent_id' cannot be empty")
+        if not agent_name:
+            raise CSVParseError(f"Row {row_num}: 'agent_name' cannot be empty")
+        if not day:
+            raise CSVParseError(f"Row {row_num}: 'day' cannot be empty")
+        if not shift_start:
+            raise CSVParseError(f"Row {row_num}: 'shift_start' cannot be empty")
+        if not shift_end:
+            raise CSVParseError(f"Row {row_num}: 'shift_end' cannot be empty")
+
+        # Validate day name
+        valid_days = {'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'}
+        if day.lower() not in valid_days:
+            raise CSVParseError(f"Row {row_num}: Invalid day '{day}'. Must be one of: {valid_days}")
+
+        # Initialize agent if not exists
+        if agent_id not in agents_data:
+            agents_data[agent_id] = {
+                'id': agent_id,
+                'name': agent_name,
+                'schedule': {}
+            }
+
+        # Initialize day if not exists
+        if day not in agents_data[agent_id]['schedule']:
+            agents_data[agent_id]['schedule'][day] = {
+                'start': shift_start,
+                'end': shift_end,
+                'break': [],
+                'disconnected': []
+            }
+
+        # Add breaks (if present)
+        break_start = row.get('break_start', '').strip()
+        break_end = row.get('break_end', '').strip()
+        if break_start and break_end:
+            agents_data[agent_id]['schedule'][day]['break'].append({
+                'start': break_start,
+                'end': break_end
+            })
+
+        # Add disconnected periods (if present)
+        disconnected_start = row.get('disconnected_start', '').strip()
+        disconnected_end = row.get('disconnected_end', '').strip()
+        if disconnected_start and disconnected_end:
+            agents_data[agent_id]['schedule'][day]['disconnected'].append({
+                'start': disconnected_start,
+                'end': disconnected_end
+            })
+
+    # Convert to list
+    schedules = list(agents_data.values())
+
+    # Verify we have at least one agent
+    if not schedules:
+        raise CSVParseError("No schedule data found in CSV")
+
+    return schedules

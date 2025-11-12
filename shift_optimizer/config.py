@@ -17,6 +17,8 @@ class ShiftRulesConfig:
     duracion_total_max_horas: float  # Maximum total shift span (including breaks and lunch)
     descanso_entre_turnos_horas: float  # Minimum rest between shifts
     dias_libres_min_por_semana: int  # Minimum days off per week
+    horas_min_por_semana: int = 46  # Minimum weekly hours per agent (legal requirement)
+    horas_max_por_semana: int = 48  # Maximum weekly hours per agent
 
 
 @dataclass
@@ -114,7 +116,9 @@ class OptimizationConfig:
             duracion_max_horas=turnos_data.get('duracion_max_horas', 9),
             duracion_total_max_horas=turnos_data.get('duracion_total_max_horas', 10),
             descanso_entre_turnos_horas=turnos_data.get('descanso_entre_turnos_horas', 8),
-            dias_libres_min_por_semana=turnos_data.get('dias_libres_min_por_semana', 1)
+            dias_libres_min_por_semana=turnos_data.get('dias_libres_min_por_semana', 1),
+            horas_min_por_semana=turnos_data.get('horas_min_por_semana', 46),
+            horas_max_por_semana=turnos_data.get('horas_max_por_semana', 48)
         )
 
         # Parse breaks config (new flatter structure)
@@ -170,7 +174,9 @@ class OptimizationConfig:
                 'duracion_max_horas': self.shift_rules.duracion_max_horas,
                 'duracion_total_max_horas': self.shift_rules.duracion_total_max_horas,
                 'descanso_entre_turnos_horas': self.shift_rules.descanso_entre_turnos_horas,
-                'dias_libres_min_por_semana': self.shift_rules.dias_libres_min_por_semana
+                'dias_libres_min_por_semana': self.shift_rules.dias_libres_min_por_semana,
+                'horas_min_por_semana': self.shift_rules.horas_min_por_semana,
+                'horas_max_por_semana': self.shift_rules.horas_max_por_semana
             },
             'pausas_cortas': {
                 'duracion_minutos': self.breaks.duracion_minutos,

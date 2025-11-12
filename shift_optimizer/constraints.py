@@ -207,25 +207,25 @@ class BreakConstraint(Constraint):
 
         for agent in optimizer.agents:
             for day in range(7):
-                # === CONSTRAINT 1: First/Last Hour Protection - REMOVED ===
-                # REASON: This constraint created 96 boolean variables per agent/day (6,720 total),
-                # causing exponential search space explosion. With only 5 agents at 100% utilization,
-                # CP-SAT could not satisfy this complex constraint.
-                #
-                # STRATEGY: Removed for now. Can be re-introduced as SOFT CONSTRAINT (penalty in objective)
-                # once system is tested with 15+ agents where there's more flexibility.
-                #
-                # IMPACT: Breaks may occur in first/last hour of shift. This is not ideal but is
-                # legal and respects all labor laws. Quality issue, not legal issue.
-                #
-                # Original code (COMMENTED OUT):
-                # if self.config.breaks.prohibir_primera_hora:
-                #     for start_val in range(48):
-                #         start_is_val = optimizer.model.NewBoolVar(...)
-                #         [96 boolean variables created here]
-                # if self.config.breaks.prohibir_ultima_hora:
-                #     for end_val in range(48):
-                #         [another 96 boolean variables]
+                # === CONSTRAINT 1: First/Last Hour Protection - REINTRODUCED ===
+                # Breaks cannot occur in first or last hour of shift.
+                # Using direct constraint approach: breaks only allowed in [start+2, end-2]
+                if self.config.breaks.prohibir_primera_hora or self.config.breaks.prohibir_ultima_hora:
+                    for block in range(48):
+                        # If break at this block, ensure it's not in first/last hour
+                        break_at_block = optimizer.breaks[agent.id, day, block]
+
+                        if self.config.breaks.prohibir_primera_hora:
+                            # Break at block => block >= shift_start + 2
+                            optimizer.model.Add(
+                                block >= optimizer.shift_start[agent.id, day] + 2
+                            ).OnlyEnforceIf(break_at_block)
+
+                        if self.config.breaks.prohibir_ultima_hora:
+                            # Break at block => block <= shift_end - 2
+                            optimizer.model.Add(
+                                block <= optimizer.shift_end[agent.id, day] - 2
+                            ).OnlyEnforceIf(break_at_block)
 
                 # === CONSTRAINT 2: Maximum Breaks Per Shift ===
                 total_breaks = sum(optimizer.breaks[agent.id, day, block] for block in range(48))
@@ -287,6 +287,76 @@ class BreakConstraint(Constraint):
                         optimizer.model.Add(total_breaks >= n_breaks).OnlyEnforceIf(work_exceeds_threshold)
 
 
+class BreakDistributionConstraint(Constraint):
+    """Enforces maximum gap between breaks (sliding window approach)."""
+
+    @property
+    def name(self) -> str:
+        return "Break Distribution (Max 3h gap)"
+
+    def apply(self, optimizer: 'ShiftOptimizer') -> None:
+        """
+        ROBUST break distribution constraint using sliding window.
+
+        Prevents long gaps without breaks by enforcing:
+        - Every 3-hour window with continuous work must have at least 1 break
+
+        Mathematical formulation:
+        - Window size: 6 blocks (3 hours)
+        - For each window [i, i+6]: if working continuously, must have >= 1 break
+        - Working continuously means: sum(x[blocks]) - sum(hueco[blocks]) >= 4 blocks (2h minimum)
+
+        This prevents scenarios like: break at 06:00, then work until 11:00 without break (5h gap).
+        """
+        window_size = 6  # 3 hours = 6 blocks of 30 min
+        min_work_threshold = 4  # Need at least 2 hours of work to require break
+
+        for agent in optimizer.agents:
+            for day in range(7):
+                # For each possible window position
+                for start_block in range(48 - window_size + 1):
+                    window_blocks = range(start_block, start_block + window_size)
+
+                    # Count work blocks in window (excluding lunch)
+                    work_in_window = sum(
+                        optimizer.x[agent.id, day, block] for block in window_blocks
+                    )
+                    hueco_in_window = sum(
+                        optimizer.hueco[agent.id, day, block] for block in window_blocks
+                    )
+                    effective_work_in_window = work_in_window - hueco_in_window
+
+                    # Count breaks in window
+                    breaks_in_window = sum(
+                        optimizer.breaks[agent.id, day, block] for block in window_blocks
+                    )
+
+                    # If working >= threshold in this window, must have at least 1 break
+                    window_requires_break = optimizer.model.NewBoolVar(
+                        f'window_requires_break_{agent.id}_{day}_{start_block}'
+                    )
+
+                    # Create IntVar for effective work (needed for comparison)
+                    effective_work_var = optimizer.model.NewIntVar(
+                        0, window_size,
+                        f'effective_work_window_{agent.id}_{day}_{start_block}'
+                    )
+                    optimizer.model.Add(effective_work_var == effective_work_in_window)
+
+                    # window_requires_break = (effective_work >= threshold)
+                    optimizer.model.Add(
+                        effective_work_var >= min_work_threshold
+                    ).OnlyEnforceIf(window_requires_break)
+                    optimizer.model.Add(
+                        effective_work_var < min_work_threshold
+                    ).OnlyEnforceIf(window_requires_break.Not())
+
+                    # If window requires break, enforce at least 1 break
+                    optimizer.model.Add(
+                        breaks_in_window >= 1
+                    ).OnlyEnforceIf(window_requires_break)
+
+
 class LunchConstraint(Constraint):
     """Enforces lunch break rules (30-60 min) - ROBUST IMPLEMENTATION."""
 
@@ -334,6 +404,24 @@ class LunchConstraint(Constraint):
                 optimizer.model.Add(total_hueco >= 1).OnlyEnforceIf(has_any_lunch)
                 optimizer.model.Add(total_hueco == 0).OnlyEnforceIf(has_any_lunch.Not())
 
+                # FORCE LUNCH if shift > obligatorio_si_turno_mayor_a_horas
+                min_hours_for_lunch = self.config.lunch.obligatorio_si_turno_mayor_a_horas
+                if min_hours_for_lunch > 0:
+                    min_blocks_for_lunch = int(min_hours_for_lunch * 2)
+
+                    # Calculate total work blocks in the day
+                    total_day_work = sum(optimizer.x[agent.id, day, block] for block in range(48))
+
+                    # Create boolean: work_exceeds_threshold
+                    work_exceeds = optimizer.model.NewBoolVar(f'work_exceeds_lunch_{agent.id}_{day}')
+                    optimizer.model.Add(total_day_work >= min_blocks_for_lunch).OnlyEnforceIf(work_exceeds)
+                    optimizer.model.Add(total_day_work < min_blocks_for_lunch).OnlyEnforceIf(work_exceeds.Not())
+
+                    # If work_exceeds AND shift_active, FORCE has_any_lunch = True
+                    optimizer.model.Add(has_any_lunch == 1).OnlyEnforceIf(
+                        [optimizer.shift_active[agent.id, day], work_exceeds]
+                    )
+
                 # If has_any_lunch, then min <= total <= max (CRUCIAL: use both bounds)
                 # IMPORTANT: These MUST be enforced or solver will violate
                 optimizer.model.Add(total_hueco >= min_lunch_blocks).OnlyEnforceIf(has_any_lunch)
@@ -348,30 +436,26 @@ class LunchConstraint(Constraint):
                 # Since lunches must be consecutive, having 1 lunch means one contiguous block
                 # For now, we rely on consecutivity constraint below
 
-                # === CONSTRAINT 3: Lunch Must Be INTERIOR to Shift (SIMPLE APPROACH) ===
-                # Lunch cannot be at the very start or end of the shift.
-                # This ensures there's work before and after lunch.
-                #
-                # Approach: If lunch exists at block b, then:
-                # - At least 1 work block must exist BEFORE lunch starts
-                # - At least 1 work block must exist AFTER lunch ends
-                #
-                # This naturally prevents lunch at shift boundaries without needing
-                # to explicitly compare with shift_start/shift_end variables.
+                # === CONSTRAINT 3: First/Last Hour Protection for Lunch ===
+                # Lunch cannot occur in first or last hour of shift.
+                # Using direct constraint approach: lunch only allowed in [start+2, end-2]
+                if self.config.lunch.prohibir_primera_hora or self.config.lunch.prohibir_ultima_hora:
+                    for block in range(48):
+                        # If lunch at this block, ensure it's not in first/last hour
+                        lunch_at_block = optimizer.hueco[agent.id, day, block]
 
-                for block in range(48):
-                    lunch_at_this_block = optimizer.hueco[agent.id, day, block]
+                        if self.config.lunch.prohibir_primera_hora:
+                            # Lunch at block => block >= shift_start + 2
+                            optimizer.model.Add(
+                                block >= optimizer.shift_start[agent.id, day] + 2
+                            ).OnlyEnforceIf(lunch_at_block)
 
-                    # If lunch starts at this block, ensure work before it
-                    if block > 0:
-                        work_before = sum(optimizer.x[agent.id, day, b] for b in range(block))
-                        optimizer.model.Add(work_before >= 1).OnlyEnforceIf(lunch_at_this_block)
-
-                    # If lunch at this block, ensure work after lunch ends
-                    # (lunch can be up to max_lunch_blocks long)
-                    if block + max_lunch_blocks < 48:
-                        work_after = sum(optimizer.x[agent.id, day, b] for b in range(block + max_lunch_blocks, 48))
-                        optimizer.model.Add(work_after >= 1).OnlyEnforceIf(lunch_at_this_block)
+                        if self.config.lunch.prohibir_ultima_hora:
+                            # Lunch at block => block <= shift_end - 2 - max_lunch_blocks
+                            # (to ensure entire lunch fits before last hour)
+                            optimizer.model.Add(
+                                block <= optimizer.shift_end[agent.id, day] - 2 - max_lunch_blocks
+                            ).OnlyEnforceIf(lunch_at_block)
 
                 # === CONSTRAINT 4: Consecutivity (SIMPLIFIED ROBUST VERSION) ===
                 # All hueco blocks must be consecutive - no gaps allowed
@@ -456,3 +540,67 @@ class CoverageConstraint(Constraint):
                 optimizer.model.Add(
                     optimizer.coverage_diff[day, block] == optimizer.coverage[day, block] - demand
                 )
+
+
+class WeeklyHoursConstraint(Constraint):
+    """
+    Enforce minimum and maximum weekly hours per agent.
+
+    Legal requirement: Minimum 46 hours per week per agent.
+    Maximum 48 hours per week to prevent overwork.
+
+    This ensures equitable distribution of work hours across all agents
+    and prevents scenarios where some agents work very little while others
+    are overloaded.
+    """
+
+    @property
+    def name(self) -> str:
+        return "Weekly Hours (Min/Max)"
+
+    def apply(self, optimizer: 'ShiftOptimizer') -> None:
+        """
+        Apply weekly hours constraints.
+
+        For each agent:
+        - Total weekly work blocks >= min_hours * 2 (46h = 92 blocks)
+        - Total weekly work blocks <= max_hours * 2 (48h = 96 blocks)
+
+        Note: Blocks are 30 minutes each, so 1 hour = 2 blocks.
+        """
+        min_hours = self.config.shift_rules.horas_min_por_semana
+        max_hours = self.config.shift_rules.horas_max_por_semana
+
+        # Convert to blocks (30 min each)
+        min_blocks = min_hours * 2  # 46h = 92 blocks
+        max_blocks = max_hours * 2  # 48h = 96 blocks
+
+        for agent in optimizer.agents:
+            # Calculate EFFECTIVE work blocks (excluding breaks and lunch)
+            # Effective work = x - breaks - lunch
+            effective_blocks = []
+
+            for day in range(7):
+                for block in range(48):
+                    # Create variable for effective work at this block
+                    # effective = 1 if agent is working (not on break or lunch), 0 otherwise
+                    effective = optimizer.model.NewIntVar(
+                        0, 1,
+                        f'effective_{agent.id}_{day}_{block}'
+                    )
+
+                    # Effective work = assigned block - break - lunch
+                    optimizer.model.Add(
+                        effective == optimizer.x[agent.id, day, block] -
+                                     optimizer.breaks[agent.id, day, block] -
+                                     optimizer.hueco[agent.id, day, block]
+                    )
+
+                    effective_blocks.append(effective)
+
+            # Sum all effective work blocks
+            total_effective_work = sum(effective_blocks)
+
+            # Apply constraints on EFFECTIVE hours (not total span)
+            optimizer.model.Add(total_effective_work >= min_blocks)  # Minimum 46h effective
+            optimizer.model.Add(total_effective_work <= max_blocks)  # Maximum 48h effective

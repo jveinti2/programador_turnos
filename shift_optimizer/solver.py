@@ -14,7 +14,9 @@ from .constraints import (
     ShiftSpanConstraint,
     RestBetweenShiftsConstraint,
     WeeklyDayOffConstraint,
+    WeeklyHoursConstraint,
     BreakConstraint,
+    BreakDistributionConstraint,
     LunchConstraint,
     ShiftContinuityConstraint,
     CoverageConstraint
@@ -66,7 +68,9 @@ class ShiftOptimizer:
             ShiftSpanConstraint(self.config),
             RestBetweenShiftsConstraint(self.config),
             WeeklyDayOffConstraint(self.config),
+            WeeklyHoursConstraint(self.config),
             BreakConstraint(self.config),
+            # BreakDistributionConstraint(self.config),  # DISABLED: Too restrictive, causing UNKNOWN
             LunchConstraint(self.config),
             ShiftContinuityConstraint(self.config),
             CoverageConstraint(self.config)
@@ -115,15 +119,71 @@ class ShiftOptimizer:
                 )
 
     def _set_objective(self):
-        """Minimize sum of absolute coverage differences."""
-        abs_diffs = []
+        """
+        Multi-objective optimization function with weighted peak coverage.
+
+        Objectives (in priority order):
+        1. Minimize coverage gap with peak weighting (weight: 1000-3000) - TOP PRIORITY
+        2. Minimize variance in weekly hours (weight: 100) - EQUITY
+
+        Peak hours (10:00-16:00, blocks 20-32) receive 3x weight to prioritize
+        coverage during high-demand periods.
+
+        This ensures the solver prioritizes meeting demand during peak hours while also
+        distributing work hours equitably across all agents.
+        """
+        # OBJECTIVE 1: Coverage gap (minimize abs diff between coverage and demand)
+        # with WEIGHTED penalties for peak hours
+        coverage_cost = []
+
+        # Peak hours: 10:00-16:00 (blocks 20-32)
+        peak_start_block = 20  # 10:00
+        peak_end_block = 32    # 16:00
+        peak_weight_multiplier = 3  # 3x weight for peak hours
+
         for day in range(7):
-            for block in range(48):  # 48 blocks of 30 minutes
+            for block in range(48):
                 abs_diff = self.model.NewIntVar(0, len(self.agents), f'abs_diff_{day}_{block}')
                 self.model.AddAbsEquality(abs_diff, self.coverage_diff[day, block])
-                abs_diffs.append(abs_diff)
 
-        self.model.Minimize(sum(abs_diffs))
+                # Apply higher weight for peak hours
+                if peak_start_block <= block <= peak_end_block:
+                    # Peak hours get 3x weight
+                    coverage_cost.append(abs_diff * peak_weight_multiplier)
+                else:
+                    # Regular hours get 1x weight
+                    coverage_cost.append(abs_diff)
+
+        # OBJECTIVE 2: Equity - minimize variance in weekly hours
+        # Target: 47 hours (midpoint between 46-48h legal requirement)
+        target_blocks = 94  # 47h * 2 blocks/hour
+
+        variance_cost = []
+        for agent in self.agents:
+            # Calculate total weekly work blocks for this agent
+            agent_blocks = []
+            for day in range(7):
+                for block in range(48):
+                    agent_blocks.append(self.x[agent.id, day, block])
+
+            total_work = sum(agent_blocks)
+
+            # Calculate deviation from target
+            deviation = self.model.NewIntVar(-96, 96, f'dev_{agent.id}')
+            abs_deviation = self.model.NewIntVar(0, 96, f'abs_dev_{agent.id}')
+
+            self.model.Add(deviation == total_work - target_blocks)
+            self.model.AddAbsEquality(abs_deviation, deviation)
+
+            variance_cost.append(abs_deviation)
+
+        # Combined objective with weights
+        total_cost = (
+            1000 * sum(coverage_cost) +   # Priority 1: Meet demand
+            100 * sum(variance_cost)      # Priority 2: Distribute equitably
+        )
+
+        self.model.Minimize(total_cost)
 
     def solve(self) -> Solution:
         """
@@ -216,8 +276,17 @@ class ShiftOptimizer:
         start_block = min(work_blocks)
         end_block = max(work_blocks) + 1  # +1 because end time is exclusive
 
+        # Ensure end_block doesn't exceed 48 (which would be 24:00)
+        if end_block > 48:
+            end_block = 48
+
         hora_inicio = TimeBlock(day, start_block).to_time()
-        hora_fin = TimeBlock(day, end_block).to_time()
+
+        # Handle end_block = 48 (24:00) by using 23:30 + 30min = midnight of next day
+        if end_block == 48:
+            hora_fin = time(23, 59)  # Use 23:59 as end time (close to midnight)
+        else:
+            hora_fin = TimeBlock(day, end_block).to_time()
 
         # Extract break times (15min breaks)
         breaks = [TimeBlock(day, b).to_time() for b in break_blocks]
@@ -226,7 +295,11 @@ class ShiftOptimizer:
         hueco = None
         if hueco_blocks:
             hueco_inicio = TimeBlock(day, min(hueco_blocks)).to_time()
-            hueco_fin = TimeBlock(day, max(hueco_blocks) + 1).to_time()
+            hueco_end_block = max(hueco_blocks) + 1
+            if hueco_end_block == 48:
+                hueco_fin = time(23, 59)
+            else:
+                hueco_fin = TimeBlock(day, hueco_end_block).to_time()
             hueco = (hueco_inicio, hueco_fin)
 
         return Shift(
