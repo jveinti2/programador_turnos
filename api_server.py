@@ -23,6 +23,8 @@ from shift_optimizer.csv_parsers import parse_agents_csv, parse_schedules_csv, C
 from shift_optimizer.models import TimeBlock
 
 
+from toon_format import encode, decode
+
 # ===== PYDANTIC MODELS FOR CONFIGURATION =====
 
 class TurnosConfig(BaseModel):
@@ -580,9 +582,37 @@ async def generate_schedule() -> Dict[str, Any]:
 
 
 @app.post("/optimize-schedule-llm")
-async def optimize_schedule_llm(temperature: float = 0.3):
-    """Ajusta el schedule usando OpenAI basado únicamente en schedule.json."""
+async def optimize_schedule_llm(
+    temperature: float = 0.3,
+    chunk_size: int = 10,
+    use_toon: bool = False
+) -> Dict[str, Any]:
+    """
+    Optimiza el schedule usando OpenAI procesando en chunks.
+
+    Args:
+        temperature: Temperatura del modelo LLM (0-1, default: 0.3)
+        chunk_size: Número de agentes por chunk (default: 10)
+        use_toon: Si True, usa formato TOON (default: False, no mejora con esta estructura JSON)
+
+    Returns:
+        Resumen de la optimización con estadísticas
+
+    Nota:
+        - Procesa schedules.json en chunks de N agentes para evitar límites de tokens
+        - Cada chunk se optimiza independientemente manteniendo contexto global
+        - Tiempo estimado: ~15s por chunk (75s para 50 agentes / 5 chunks)
+    """
     try:
+        from shift_optimizer.llm_optimizer import (
+            chunk_agents,
+            optimize_chunk_with_llm,
+            merge_optimized_chunks,
+            validate_schedule_structure,
+            save_optimized_schedule,
+            build_global_context
+        )
+
         schedule_path = Path("output/schedules.json")
         prompt_path = Path("config/system_prompt.yaml")
 
@@ -591,40 +621,120 @@ async def optimize_schedule_llm(temperature: float = 0.3):
         if not prompt_path.exists():
             raise HTTPException(status_code=404, detail=f"Archivo no encontrado: {prompt_path}")
 
-        # Leer schedule y prompt
-        schedule = schedule_path.read_text(encoding="utf-8")
-        system_prompt = yaml.safe_load(prompt_path.read_text(encoding="utf-8")).get("system_prompt", "")
-
-        # Verificar API key
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise HTTPException(status_code=500, detail="OPENAI_API_KEY no configurada")
 
-        client = OpenAI(api_key=api_key)
+        # Cargar configuración y schedule original
+        prompt_config = yaml.safe_load(prompt_path.read_text(encoding="utf-8"))
+        system_prompt = prompt_config.get("system_prompt", "")
+        model = prompt_config.get("model", "gpt-4o-mini")
 
-        # Enviar solo el schedule al LLM
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"SCHEDULE:\n{schedule}"}
-            ],
-            temperature=temperature
-        )
+        with open(schedule_path, 'r', encoding='utf-8') as f:
+            original_schedule = json.load(f)
 
-        llm_output = response.choices[0].message.content.strip()
+        # Validar estructura original
+        is_valid, error_msg = validate_schedule_structure(original_schedule)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=f"Schedule original inválido: {error_msg}")
 
-        # Extraer JSON del output
-        json_match = re.search(r'\[.*\]', llm_output, re.DOTALL)
-        improved_schedule = json.loads(json_match.group(0)) if json_match else json.loads(llm_output)
+        # Dividir en chunks
+        chunks = chunk_agents(original_schedule, chunk_size=chunk_size)
+        total_chunks = len(chunks)
 
-        # Sobrescribir schedule original
-        schedule_path.write_text(json.dumps(improved_schedule, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"📦 Dividiendo {len(original_schedule)} agentes en {total_chunks} chunks de ~{chunk_size} agentes")
+        print(f"🔧 Usando modelo: {model}, temperatura: {temperature}, TOON: {use_toon}")
 
-        return Response(status_code=204)
+        # Optimizar cada chunk
+        optimized_chunks = []
+        chunk_stats = []
 
+        for i, chunk in enumerate(chunks, 1):
+            chunk_ids = [agent['id'] for agent in chunk]
+            print(f"\n🚀 Procesando chunk {i}/{total_chunks} ({len(chunk)} agentes: {', '.join(chunk_ids[:3])}...)")
+
+            # Construir contexto global
+            global_context = build_global_context(original_schedule, chunk_ids)
+
+            try:
+                # Optimizar chunk
+                optimized_chunk = optimize_chunk_with_llm(
+                    chunk_data=chunk,
+                    system_prompt=system_prompt,
+                    global_context=global_context,
+                    api_key=api_key,
+                    model=model,
+                    temperature=temperature,
+                    use_toon=use_toon
+                )
+
+                # Validar chunk optimizado
+                is_valid, error_msg = validate_schedule_structure(optimized_chunk)
+                if not is_valid:
+                    print(f"⚠️ Chunk {i} retornó estructura inválida: {error_msg}. Usando chunk original.")
+                    optimized_chunk = chunk
+
+                optimized_chunks.append(optimized_chunk)
+                chunk_stats.append({
+                    "chunk": i,
+                    "agents": len(optimized_chunk),
+                    "status": "optimized" if is_valid else "fallback_to_original"
+                })
+                print(f"✅ Chunk {i} optimizado exitosamente")
+
+            except Exception as chunk_error:
+                print(f"❌ Error en chunk {i}: {chunk_error}. Usando chunk original.")
+                optimized_chunks.append(chunk)
+                chunk_stats.append({
+                    "chunk": i,
+                    "agents": len(chunk),
+                    "status": "error",
+                    "error": str(chunk_error)
+                })
+
+        # Fusionar chunks optimizados
+        print("\n🔗 Fusionando chunks optimizados...")
+        final_schedule = merge_optimized_chunks(optimized_chunks)
+
+        # Validar schedule final
+        is_valid, error_msg = validate_schedule_structure(final_schedule)
+        if not is_valid:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Schedule fusionado es inválido: {error_msg}"
+            )
+
+        # Guardar schedule optimizado
+        save_optimized_schedule(final_schedule, schedule_path)
+        print(f"💾 Schedule optimizado guardado en {schedule_path}")
+
+        # Preparar respuesta
+        successful_optimizations = sum(1 for stat in chunk_stats if stat['status'] == 'optimized')
+
+        return {
+            "status": "success",
+            "message": f"Schedule optimizado en {total_chunks} chunks",
+            "total_agents": len(final_schedule),
+            "chunks_processed": total_chunks,
+            "chunks_optimized": successful_optimizations,
+            "chunks_fallback": total_chunks - successful_optimizations,
+            "chunk_details": chunk_stats,
+            "config": {
+                "model": model,
+                "temperature": temperature,
+                "chunk_size": chunk_size,
+                "use_toon": use_toon
+            },
+            "output_file": str(schedule_path)
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
+        import traceback
+        print(f"❌ Error inesperado: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Fallo al optimizar con LLM: {e}")
+
 
 
 @app.put("/update-schedule")

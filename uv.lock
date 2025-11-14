@@ -576,6 +576,7 @@ dependencies = [
     { name = "openai" },
     { name = "ortools" },
     { name = "pyyaml" },
+    { name = "toon-format" },
 ]
 
 [package.metadata]
@@ -584,6 +585,7 @@ requires-dist = [
     { name = "openai", specifier = ">=2.7.2" },
     { name = "ortools", specifier = ">=9.7.2996" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "toon-format", git = "https://github.com/toon-format/toon-python.git" },
 ]
 
 [[package]]
@@ -913,6 +915,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/a7/a5/d6f429d43394057b6
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/72/2db2f49247d0a18b4f1bb9a5a39a0162869acf235f3a96418363947b3d46/starlette-0.48.0-py3-none-any.whl", hash = "sha256:0764ca97b097582558ecb498132ed0c7d942f233f365b86ba37770e026510659", size = 73736 },
 ]
+
+[[package]]
+name = "toon-format"
+version = "0.9.0b1"
+source = { git = "https://github.com/toon-format/toon-python.git#d1ed0e9cb9a8da2e0061114e4841a392d43e1f4b" }
 
 [[package]]
 name = "tqdm"

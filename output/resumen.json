@@ -6,37 +6,37 @@
     {
       "dia": 0,
       "demanda": 281,
-      "cobertura": 662
+      "cobertura": 623
     },
     {
       "dia": 1,
       "demanda": 281,
-      "cobertura": 689
+      "cobertura": 601
     },
     {
       "dia": 2,
       "demanda": 281,
-      "cobertura": 665
+      "cobertura": 555
     },
     {
       "dia": 3,
       "demanda": 281,
-      "cobertura": 642
+      "cobertura": 583
     },
     {
       "dia": 4,
       "demanda": 281,
-      "cobertura": 661
+      "cobertura": 565
     },
     {
       "dia": 5,
       "demanda": 281,
-      "cobertura": 681
+      "cobertura": 559
     },
     {
       "dia": 6,
       "demanda": 199,
-      "cobertura": 0
+      "cobertura": 14
     }
   ]
 }

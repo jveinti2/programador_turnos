@@ -9,6 +9,10 @@ dependencies = [
     "openai>=2.7.2",
     "ortools>=9.7.2996",
     "pyyaml>=6.0",
+    "toon-format",
 ]
+
+[tool.uv.sources]
+toon-format = { git = "https://github.com/toon-format/toon-python.git" }
 
 
