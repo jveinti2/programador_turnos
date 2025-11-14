@@ -1,5 +1,7 @@
 # Programador de Turnos (Backend)
 
+![](./public/1_img.png)
+
 API construida con **FastAPI** y ejecutada mediante **uv**, diseñada para optimizar la asignación de turnos en centros de contacto utilizando el solver **Google OR-Tools (CP-SAT)** bajo una arquitectura modular basada en restricciones.
 
 ---
