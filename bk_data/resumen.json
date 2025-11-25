@@ -1,0 +1,42 @@
+{
+  "status": "OPTIMAL",
+  "agentes_disponibles": 29,
+  "agentes_faltantes": 0,
+  "cobertura_por_dia": [
+    {
+      "dia": 0,
+      "demanda": 281,
+      "cobertura": 290
+    },
+    {
+      "dia": 1,
+      "demanda": 281,
+      "cobertura": 298
+    },
+    {
+      "dia": 2,
+      "demanda": 281,
+      "cobertura": 282
+    },
+    {
+      "dia": 3,
+      "demanda": 281,
+      "cobertura": 303
+    },
+    {
+      "dia": 4,
+      "demanda": 281,
+      "cobertura": 320
+    },
+    {
+      "dia": 5,
+      "demanda": 281,
+      "cobertura": 269
+    },
+    {
+      "dia": 6,
+      "demanda": 199,
+      "cobertura": 268
+    }
+  ]
+}

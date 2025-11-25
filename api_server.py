@@ -8,6 +8,7 @@ from fastapi.responses import PlainTextResponse
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field, validator
 from openai import OpenAI
+import asyncio
 import json
 import re
 import yaml
@@ -34,6 +35,20 @@ class TurnosConfig(BaseModel):
     duracion_total_max_horas: int = Field(..., ge=1, le=24, description="Maximum total shift span")
     descanso_entre_turnos_horas: int = Field(..., ge=0, le=24, description="Minimum rest between shifts")
     dias_libres_min_por_semana: int = Field(..., ge=0, le=7, description="Minimum days off per week")
+    horas_min_por_semana: int = Field(..., ge=0, le=168, description="Minimum weekly work hours")
+    horas_max_por_semana: int = Field(..., ge=0, le=168, description="Maximum weekly work hours")
+
+    @validator('duracion_max_horas')
+    def max_greater_than_min(cls, v, values):
+        if 'duracion_min_horas' in values and v < values['duracion_min_horas']:
+            raise ValueError('duracion_max_horas debe ser >= duracion_min_horas')
+        return v
+
+    @validator('horas_max_por_semana')
+    def weekly_max_greater_than_min(cls, v, values):
+        if 'horas_min_por_semana' in values and v < values['horas_min_por_semana']:
+            raise ValueError('horas_max_por_semana debe ser >= horas_min_por_semana')
+        return v
 
 
 class PausasCortasConfig(BaseModel):
@@ -85,7 +100,9 @@ class ReglasYAML(BaseModel):
                     "duracion_max_horas": 9,
                     "duracion_total_max_horas": 10,
                     "descanso_entre_turnos_horas": 8,
-                    "dias_libres_min_por_semana": 1
+                    "dias_libres_min_por_semana": 1,
+                    "horas_min_por_semana": 35,
+                    "horas_max_por_semana": 50
                 },
                 "pausas_cortas": {
                     "duracion_minutos": 15,
@@ -120,10 +137,10 @@ class SystemPromptConfig(BaseModel):
     """System prompt configuration for LLM."""
     system_prompt: str = Field(..., min_length=1, description="Multi-line system prompt text")
     model: str = Field(..., min_length=1, description="LLM model name (e.g., gpt-4)")
-    temperature: float = Field(..., ge=0.0, le=2.0, description="Temperature parameter")
-    top_p: float = Field(..., ge=0.0, le=1.0, description="Top-p parameter")
-    frecuency_penalty: float = Field(..., ge=-2.0, le=2.0, description="Frequency penalty")
-    presence_penalty: float = Field(..., ge=-2.0, le=2.0, description="Presence penalty")
+    temperature: float = Field(..., ge=0.0, le=2.0, description="Temperature parameter (0.0-2.0)")
+    top_p: float = Field(..., ge=0.0, le=1.0, description="Top-p parameter (0.0-1.0)")
+    frequency_penalty: float = Field(..., ge=-2.0, le=2.0, description="Frequency penalty (-2.0 to 2.0)")
+    presence_penalty: float = Field(..., ge=-2.0, le=2.0, description="Presence penalty (-2.0 to 2.0)")
 
     class Config:
         json_schema_extra = {
@@ -132,7 +149,7 @@ class SystemPromptConfig(BaseModel):
                 "model": "gpt-4",
                 "temperature": 0.7,
                 "top_p": 1.0,
-                "frecuency_penalty": 0.0,
+                "frequency_penalty": 0.0,
                 "presence_penalty": 0.0
             }
         }
@@ -319,119 +336,289 @@ def get_coverage_by_day(day: int) -> List[Dict[str, Any]]:
     return result
 
 
-# API Endpoints
+# ============================================================================
+# SECTION 1: HEALTH & MONITORING
+# ============================================================================
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
 
-@app.get("/dashboard-metrics")
-async def dashboard_metrics() -> List[Dict[str, Any]]:
+# ============================================================================
+# SECTION 2: DASHBOARD & ANALYTICS
+# ============================================================================
+
+@app.get("/dashboard")
+async def get_dashboard(day: Optional[int] = None) -> Dict[str, Any]:
     """
-    Get dashboard metrics showing system overview.
+    Get dashboard metrics and optionally chart data for a specific day.
 
-    Returns weekly aggregated metrics:
-    - Agentes Disponibles: Total agents in the system
-    - Agentes Requeridos: Peak demand across the week
-    - Nivel de Servicio: Average coverage percentage (coverage/demand * 100)
-
-    Requires that schedules have been generated first with /generate-schedule.
-
-    **Example Response:**
-    ```json
-    [
-      {
-        "title": "Agentes Disponibles",
-        "value": "8",
-        "description": "Agentes activos en el sistema"
-      },
-      {
-        "title": "Agentes Requeridos",
-        "value": "24",
-        "description": "Según demanda semanal"
-      },
-      {
-        "title": "Nivel de Servicio",
-        "value": "95.5%",
-        "description": "Cobertura de demanda"
-      }
-    ]
-    ```
-
-    Returns:
-        List of metric objects with title, value, description, icon, and color
-
-    Raises:
-        404: Required files not found (agents, demand, or schedules)
-        500: Failed to calculate metrics
-    """
-    try:
-        return calculate_dashboard_metrics()
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to calculate dashboard metrics: {str(e)}"
-        )
-
-
-@app.get("/demand-coverage-chart")
-async def demand_coverage_chart(day: int) -> List[Dict[str, Any]]:
-    """
-    Get demand and coverage data for a specific day.
-
-    Returns 48 time blocks (30-minute intervals) for the specified day,
-    each containing demand and actual coverage (disponibilidad).
+    This endpoint unifies /dashboard-metrics and /demand-coverage-chart into a single call.
+    Returns always the 3 main metrics, and optionally the 48 time blocks for a specific day.
 
     **Query Parameters:**
-    - **day** (required): Day of week (0=Monday, 1=Tuesday, ..., 6=Sunday)
+    - **day** (optional): Day of week (0=Monday, 6=Sunday). If provided, includes chart_data in response.
 
-    **Example Request:**
+    **Example Request (metrics only):**
     ```
-    GET /demand-coverage-chart?day=0
+    GET /dashboard
     ```
 
-    **Example Response:**
+    **Example Request (metrics + chart for Monday):**
+    ```
+    GET /dashboard?day=0
+    ```
+
+    **Example Response (without day parameter):**
     ```json
-    [
-      {
-        "time": "00:00",
-        "block": 0,
-        "demanda": 3,
-        "disponibilidad": 2
-      },
-      {
-        "time": "00:30",
-        "block": 1,
-        "demanda": 2,
-        "disponibilidad": 2
-      },
-      ...48 blocks total
-    ]
+    {
+      "metrics": [
+        {
+          "title": "Agentes Disponibles",
+          "value": "8",
+          "description": "Agentes activos en el sistema"
+        },
+        {
+          "title": "Agentes Requeridos",
+          "value": "24",
+          "description": "Según demanda semanal"
+        },
+        {
+          "title": "Nivel de Servicio",
+          "value": "95.5%",
+          "description": "Cobertura de demanda"
+        }
+      ]
+    }
     ```
 
-    Args:
-        day: Day of week (0-6, where 0=Monday, 6=Sunday)
+    **Example Response (with day=0):**
+    ```json
+    {
+      "metrics": [
+        {
+          "title": "Agentes Disponibles",
+          "value": "8",
+          "description": "Agentes activos en el sistema"
+        },
+        {
+          "title": "Agentes Requeridos",
+          "value": "24",
+          "description": "Según demanda semanal"
+        },
+        {
+          "title": "Nivel de Servicio",
+          "value": "95.5%",
+          "description": "Cobertura de demanda"
+        }
+      ],
+      "chart_data": {
+        "day": 0,
+        "day_name": "lunes",
+        "blocks": [
+          {
+            "time": "00:00",
+            "block": 0,
+            "demanda": 3,
+            "disponibilidad": 2
+          },
+          ...48 blocks total
+        ]
+      }
+    }
+    ```
 
     Returns:
-        List of 48 time blocks with demand and coverage data
+        Dictionary with metrics (always) and chart_data (if day parameter provided)
 
     Raises:
         400: Invalid day parameter (must be 0-6)
-        404: Required files not found (demand or schedules)
-        500: Failed to retrieve coverage data
+        404: Required files not found
+        500: Failed to calculate metrics or coverage
     """
     try:
-        return get_coverage_by_day(day)
+        # Validate day parameter if provided
+        if day is not None and (day < 0 or day > 6):
+            raise HTTPException(
+                status_code=400,
+                detail="Day must be between 0 (Monday) and 6 (Sunday)"
+            )
+
+        # Calculate metrics (always included)
+        metrics = calculate_dashboard_metrics()
+
+        # Prepare base response
+        response = {"metrics": metrics}
+
+        # If day requested, add chart data
+        if day is not None:
+            day_names = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+            chart_blocks = get_coverage_by_day(day)
+
+            response["chart_data"] = {
+                "day": day,
+                "day_name": day_names[day],
+                "blocks": chart_blocks
+            }
+
+        return response
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to retrieve coverage chart: {str(e)}"
+            detail=f"Failed to retrieve dashboard data: {str(e)}"
         )
+
+
+
+# ============================================================================
+# SECTION 3: SCHEDULE GENERATION & OPTIMIZATION
+# ============================================================================
+
+def _build_unified_response(
+    status: str,
+    agents: List,
+    demanda,
+    resumen: Optional[Dict] = None,
+    deficit_agents: int = 0
+) -> Dict[str, Any]:
+    """
+    Construye respuesta unificada para /generate-schedule.
+
+    Todos los casos de respuesta siguen el mismo esquema:
+    - status: Estado del proceso
+    - agentes_disponibles: Cantidad total de agentes
+    - agentes_faltantes: Agentes adicionales necesarios
+    - cobertura_por_dia: Array de cobertura por día (vacío si no hay resumen)
+
+    Args:
+        status: Estado del proceso
+        agents: Lista de agentes disponibles
+        demanda: Objeto de demanda
+        resumen: Resumen del solver (None si no se ejecutó)
+        deficit_agents: Agentes faltantes (para caso insufficient_coverage)
+    """
+    agentes_disponibles = len(agents)
+
+    # Calcular agentes faltantes según el caso
+    if status == "insufficient_agents":
+        max_demand = max(max(day) for day in demanda.data)
+        config = OptimizationConfig.from_yaml('config/reglas.yaml')
+        agentes_faltantes = int(max_demand * config.coverage.margen_seguridad) - agentes_disponibles
+    elif status == "insufficient_coverage":
+        agentes_faltantes = deficit_agents
+    elif resumen:
+        agentes_faltantes = resumen.get('agentes_faltantes', 0)
+    else:
+        agentes_faltantes = 0
+
+    # Cobertura por día (vacío si no hay resumen)
+    cobertura_por_dia = []
+    if resumen and 'cobertura_por_dia' in resumen:
+        cobertura_por_dia = resumen['cobertura_por_dia']
+
+    return {
+        "status": status,
+        "agentes_disponibles": agentes_disponibles,
+        "agentes_faltantes": max(0, agentes_faltantes),
+        "cobertura_por_dia": cobertura_por_dia
+    }
+
+
+async def _optimize_chunks_parallel(
+    chunks: List[List[Dict[str, Any]]],
+    original_schedule: List[Dict[str, Any]],
+    system_prompt: str,
+    api_key: str,
+    model: str,
+    temperature: float,
+    use_toon: bool
+) -> tuple[List[List[Dict[str, Any]]], List[Dict[str, Any]]]:
+    """
+    Optimiza múltiples chunks en paralelo usando asyncio.gather().
+
+    Args:
+        chunks: Lista de chunks de agentes
+        original_schedule: Schedule completo original (para contexto global)
+        system_prompt: Prompt del sistema
+        api_key: OpenAI API key
+        model: Modelo LLM a usar
+        temperature: Temperatura del modelo
+        use_toon: Si se usa formato TOON
+
+    Returns:
+        (optimized_chunks, chunk_stats): Chunks optimizados y estadísticas
+    """
+    from shift_optimizer.llm_optimizer import (
+        optimize_chunk_with_llm,
+        build_global_context,
+        validate_schedule_structure
+    )
+
+    async def optimize_single_chunk(chunk_index: int, chunk: List[Dict[str, Any]]):
+        """Optimiza un chunk individual y retorna resultado con estadísticas."""
+        chunk_ids = [agent['id'] for agent in chunk]
+        chunk_num = chunk_index + 1
+
+        print(f"🚀 Chunk {chunk_num}/{len(chunks)}: Procesando {len(chunk)} agentes ({', '.join(chunk_ids[:3])}...)")
+
+        try:
+            # Construir contexto global
+            global_context = build_global_context(original_schedule, chunk_ids)
+
+            # Optimizar chunk (async)
+            optimized_chunk = await optimize_chunk_with_llm(
+                chunk_data=chunk,
+                system_prompt=system_prompt,
+                global_context=global_context,
+                api_key=api_key,
+                model=model,
+                temperature=temperature,
+                use_toon=use_toon
+            )
+
+            # Validar resultado
+            is_valid, error_msg = validate_schedule_structure(optimized_chunk)
+            if not is_valid:
+                print(f"⚠️ Chunk {chunk_num} retornó estructura inválida: {error_msg}. Usando original.")
+                return chunk, {
+                    "chunk": chunk_num,
+                    "agents": len(chunk),
+                    "status": "fallback_to_original",
+                    "reason": error_msg
+                }
+
+            print(f"✅ Chunk {chunk_num} optimizado exitosamente")
+            return optimized_chunk, {
+                "chunk": chunk_num,
+                "agents": len(optimized_chunk),
+                "status": "optimized"
+            }
+
+        except Exception as e:
+            print(f"❌ Error en chunk {chunk_num}: {e}. Usando original.")
+            return chunk, {
+                "chunk": chunk_num,
+                "agents": len(chunk),
+                "status": "error",
+                "error": str(e)
+            }
+
+    # Ejecutar todos los chunks en paralelo
+    print(f"\n🔄 Procesando {len(chunks)} chunks en paralelo...")
+    results = await asyncio.gather(*[
+        optimize_single_chunk(i, chunk) for i, chunk in enumerate(chunks)
+    ])
+
+    # Separar chunks optimizados y estadísticas
+    optimized_chunks = [result[0] for result in results]
+    chunk_stats = [result[1] for result in results]
+
+    return optimized_chunks, chunk_stats
 
 
 @app.post("/generate-schedule")
@@ -444,10 +631,10 @@ async def generate_schedule() -> Dict[str, Any]:
 
     **No Request Body Required** - Uses files from data/ directory.
 
-    **Example Response (Success):**
+    **Unified Response Schema** - All cases return the same structure:
     ```json
     {
-      "status": "OPTIMAL",
+      "status": "OPTIMAL | DEFICIT | SUPERHABIT | insufficient_agents | insufficient_coverage",
       "agentes_disponibles": 8,
       "agentes_faltantes": 0,
       "cobertura_por_dia": [
@@ -455,48 +642,26 @@ async def generate_schedule() -> Dict[str, Any]:
           "dia": 0,
           "demanda": 57,
           "cobertura": 57
-        },
-        {
-          "dia": 1,
-          "demanda": 57,
-          "cobertura": 57
         }
       ]
     }
     ```
 
-    **Example Response (Insufficient Coverage):**
-    ```json
-    {
-      "status": "insufficient_coverage",
-      "message": "No hay suficientes agentes para cubrir la demanda",
-      "deficit_analysis": {
-        "has_deficit": true,
-        "has_critical_gaps": true,
-        "total_deficit_hours": 15.5,
-        "gaps": [
-          {
-            "day": 6,
-            "day_name": "Domingo",
-            "start_time": "07:00",
-            "end_time": "22:30",
-            "required_agents": 3,
-            "available_agents": 0,
-            "deficit": 3
-          }
-        ]
-      },
-      "recommendation": {
-        "message": "Se necesitan 3 agentes adicionales (CRÍTICO)",
-        "additional_agents_needed": 3,
-        "problematic_days": ["Domingo"],
-        "severity": "critical"
-      }
-    }
-    ```
+    **Status Values:**
+    - `OPTIMAL`: Perfect coverage achieved
+    - `DEFICIT`: Some time blocks have less coverage than demand
+    - `SUPERHABIT`: More coverage than needed in some blocks
+    - `insufficient_agents`: Not enough agents to meet minimum requirements
+    - `insufficient_coverage`: Critical gaps detected before optimization
+
+    **Fields:**
+    - `status`: Current state of the schedule
+    - `agentes_disponibles`: Total number of available agents
+    - `agentes_faltantes`: Additional agents needed (0 if sufficient)
+    - `cobertura_por_dia`: Coverage array (empty if generation failed)
 
     Returns:
-        Schedule summary with status and coverage information
+        Unified schedule summary with status and coverage information
 
     Raises:
         404: Required files not found
@@ -523,14 +688,11 @@ async def generate_schedule() -> Dict[str, Any]:
         min_agents_needed = int(max_demand * config.coverage.margen_seguridad)
 
         if len(agents) < min_agents_needed:
-            return {
-                "status": "insufficient_agents",
-                "message": f"Se requieren al menos {min_agents_needed} agentes (con margen de seguridad {config.coverage.margen_seguridad}x)",
-                "agents_available": len(agents),
-                "agents_needed": min_agents_needed,
-                "max_demand": max_demand,
-                "recommendation": f"Contratar {min_agents_needed - len(agents)} agentes adicionales"
-            }
+            return _build_unified_response(
+                status="insufficient_agents",
+                agents=agents,
+                demanda=demanda
+            )
 
         # STEP 1: Analyze coverage
         analyzer = DeficitAnalyzer(agents, demanda)
@@ -538,12 +700,13 @@ async def generate_schedule() -> Dict[str, Any]:
 
         # STEP 2: Block if critical deficit
         if config.coverage.bloquear_si_deficit and deficit_report.has_critical_gaps:
-            return {
-                "status": "insufficient_coverage",
-                "message": "No hay suficientes agentes para cubrir la demanda",
-                "deficit_analysis": deficit_report.to_dict(),
-                "recommendation": deficit_report.recommendation
-            }
+            deficit_agents_needed = deficit_report.recommendation.get('additional_agents_needed', 0)
+            return _build_unified_response(
+                status="insufficient_coverage",
+                agents=agents,
+                demanda=demanda,
+                deficit_agents=deficit_agents_needed
+            )
 
         # STEP 3: Run CP-SAT solver
         optimizer = ShiftOptimizer.from_config(config_path)
@@ -557,22 +720,20 @@ async def generate_schedule() -> Dict[str, Any]:
         resumen_path = Path(output_dir) / "resumen.json"
         if resumen_path.exists():
             with open(resumen_path, 'r', encoding='utf-8') as f:
-                summary = json.load(f)
+                resumen = json.load(f)
 
-            if deficit_report.has_deficit:
-                summary['coverage_warnings'] = {
-                    'has_gaps': True,
-                    'total_deficit_hours': deficit_report.total_deficit_hours,
-                    'recommendation': deficit_report.recommendation
-                }
-
-            return summary
+            return _build_unified_response(
+                status=resumen.get('status', 'OPTIMAL'),
+                agents=agents,
+                demanda=demanda,
+                resumen=resumen
+            )
         else:
-            return {
-                "status": result['status'],
-                "summary": result.get('summary'),
-                "message": "Optimization completed but summary file not found"
-            }
+            return _build_unified_response(
+                status=result.get('status', 'UNKNOWN'),
+                agents=agents,
+                demanda=demanda
+            )
 
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")
@@ -588,7 +749,7 @@ async def optimize_schedule_llm(
     use_toon: bool = False
 ) -> Dict[str, Any]:
     """
-    Optimiza el schedule usando OpenAI procesando en chunks.
+    Optimiza el schedule usando OpenAI procesando chunks en paralelo.
 
     Args:
         temperature: Temperatura del modelo LLM (0-1, default: 0.3)
@@ -600,17 +761,16 @@ async def optimize_schedule_llm(
 
     Nota:
         - Procesa schedules.json en chunks de N agentes para evitar límites de tokens
+        - Procesa todos los chunks EN PARALELO usando asyncio.gather()
+        - Tiempo estimado: ~18-22s para 50 agentes (5 chunks) - 73% más rápido que secuencial
         - Cada chunk se optimiza independientemente manteniendo contexto global
-        - Tiempo estimado: ~15s por chunk (75s para 50 agentes / 5 chunks)
     """
     try:
         from shift_optimizer.llm_optimizer import (
             chunk_agents,
-            optimize_chunk_with_llm,
             merge_optimized_chunks,
             validate_schedule_structure,
-            save_optimized_schedule,
-            build_global_context
+            save_optimized_schedule
         )
 
         schedule_path = Path("output/schedules.json")
@@ -645,52 +805,16 @@ async def optimize_schedule_llm(
         print(f"📦 Dividiendo {len(original_schedule)} agentes en {total_chunks} chunks de ~{chunk_size} agentes")
         print(f"🔧 Usando modelo: {model}, temperatura: {temperature}, TOON: {use_toon}")
 
-        # Optimizar cada chunk
-        optimized_chunks = []
-        chunk_stats = []
-
-        for i, chunk in enumerate(chunks, 1):
-            chunk_ids = [agent['id'] for agent in chunk]
-            print(f"\n🚀 Procesando chunk {i}/{total_chunks} ({len(chunk)} agentes: {', '.join(chunk_ids[:3])}...)")
-
-            # Construir contexto global
-            global_context = build_global_context(original_schedule, chunk_ids)
-
-            try:
-                # Optimizar chunk
-                optimized_chunk = optimize_chunk_with_llm(
-                    chunk_data=chunk,
-                    system_prompt=system_prompt,
-                    global_context=global_context,
-                    api_key=api_key,
-                    model=model,
-                    temperature=temperature,
-                    use_toon=use_toon
-                )
-
-                # Validar chunk optimizado
-                is_valid, error_msg = validate_schedule_structure(optimized_chunk)
-                if not is_valid:
-                    print(f"⚠️ Chunk {i} retornó estructura inválida: {error_msg}. Usando chunk original.")
-                    optimized_chunk = chunk
-
-                optimized_chunks.append(optimized_chunk)
-                chunk_stats.append({
-                    "chunk": i,
-                    "agents": len(optimized_chunk),
-                    "status": "optimized" if is_valid else "fallback_to_original"
-                })
-                print(f"✅ Chunk {i} optimizado exitosamente")
-
-            except Exception as chunk_error:
-                print(f"❌ Error en chunk {i}: {chunk_error}. Usando chunk original.")
-                optimized_chunks.append(chunk)
-                chunk_stats.append({
-                    "chunk": i,
-                    "agents": len(chunk),
-                    "status": "error",
-                    "error": str(chunk_error)
-                })
+        # Optimizar chunks en paralelo usando asyncio
+        optimized_chunks, chunk_stats = await _optimize_chunks_parallel(
+            chunks=chunks,
+            original_schedule=original_schedule,
+            system_prompt=system_prompt,
+            api_key=api_key,
+            model=model,
+            temperature=temperature,
+            use_toon=use_toon
+        )
 
         # Fusionar chunks optimizados
         print("\n🔗 Fusionando chunks optimizados...")
@@ -737,7 +861,7 @@ async def optimize_schedule_llm(
 
 
 
-@app.put("/update-schedule")
+@app.post("/update-schedule")
 async def update_schedule(csv_content: str = Body(..., media_type="text/plain")) -> Dict[str, Any]:
     """
     Manually update schedule from CSV.
@@ -783,7 +907,7 @@ async def update_schedule(csv_content: str = Body(..., media_type="text/plain"))
 
     **Example Request (curl):**
     ```bash
-    curl -X PUT http://localhost:8000/update-schedule \\
+    curl -X POST http://localhost:8000/update-schedule \\
       -H "Content-Type: text/plain" \\
       --data-binary @schedules.csv
     ```
@@ -793,7 +917,7 @@ async def update_schedule(csv_content: str = Body(..., media_type="text/plain"))
     const csvContent = "agent_id,agent_name,day,shift_start,shift_end,break_start,break_end,disconnected_start,disconnected_end\\nA001,Juan Pérez,lunes,08:00,17:30,09:30,09:45,,\\n";
 
     fetch('http://localhost:8000/update-schedule', {
-      method: 'PUT',
+      method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: csvContent
     });
@@ -954,64 +1078,10 @@ async def get_schedules() -> List[Dict[str, Any]]:
         )
 
 
-@app.get("/schedule/{agent_id}")
-async def get_agent_schedule(agent_id: str) -> Dict[str, Any]:
-    """
-    Get the schedule for a specific agent.
 
-    This endpoint reads the agent's schedule from output/schedules.json
-    which must be generated first by calling the /optimize endpoint.
-
-    Args:
-        agent_id: The agent's unique identifier (e.g., "AG001")
-
-    Returns:
-        Agent schedule with shifts for the week
-
-    Example:
-        GET /schedule/AG001
-    """
-    try:
-        schedules_path = Path("output/schedules.json")
-
-        # Check if schedules file exists
-        if not schedules_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail="Schedules not found. Please run /optimize first to generate schedules."
-            )
-
-        # Load schedules (it's a list of agent objects)
-        with open(schedules_path, 'r', encoding='utf-8') as f:
-            schedules = json.load(f)
-
-        # Find the agent's schedule by searching in the list
-        for agent in schedules:
-            if agent.get('id') == agent_id:
-                return agent
-
-        # Agent not found
-        available_ids = [agent.get('id') for agent in schedules]
-        raise HTTPException(
-            status_code=404,
-            detail=f"Agent '{agent_id}' not found in schedules. Available agents: {available_ids}"
-        )
-
-    except HTTPException:
-        raise
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Invalid schedules file format: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to retrieve schedule: {str(e)}"
-        )
-
-
-# ===== CONFIGURATION MANAGEMENT ENDPOINTS =====
+# ============================================================================
+# SECTION 4: CONFIGURATION MANAGEMENT
+# ============================================================================
 
 @app.get("/get-rules", response_model=ReglasYAML)
 async def get_rules() -> ReglasYAML:
@@ -1181,7 +1251,7 @@ async def get_prompt() -> SystemPromptConfig:
           "model": "gpt-4",
           "temperature": 0.7,
           "top_p": 1.0,
-          "frecuency_penalty": 0.0,
+          "frequency_penalty": 0.0,
           "presence_penalty": 0.0
         }
     """
@@ -1228,7 +1298,7 @@ async def update_prompt(config: SystemPromptConfig) -> Dict[str, Any]:
       "model": "gpt-4",
       "temperature": 0.7,
       "top_p": 1.0,
-      "frecuency_penalty": 0.0,
+      "frequency_penalty": 0.0,
       "presence_penalty": 0.0
     }
     ```
@@ -1238,7 +1308,7 @@ async def update_prompt(config: SystemPromptConfig) -> Dict[str, Any]:
     - **model**: Model name (e.g., "gpt-4", "gpt-3.5-turbo")
     - **temperature**: Randomness (0.0 = deterministic, 2.0 = very random)
     - **top_p**: Nucleus sampling (0.0-1.0)
-    - **frecuency_penalty**: Penalize frequent tokens (-2.0 to 2.0)
+    - **frequency_penalty**: Penalize frequent tokens (-2.0 to 2.0)
     - **presence_penalty**: Penalize repeated topics (-2.0 to 2.0)
 
     Returns:
@@ -1257,7 +1327,7 @@ async def update_prompt(config: SystemPromptConfig) -> Dict[str, Any]:
             'model': config.model,
             'temperature': config.temperature,
             'top_p': config.top_p,
-            'frecuency_penalty': config.frecuency_penalty,
+            'frequency_penalty': config.frequency_penalty,
             'presence_penalty': config.presence_penalty
         }
 
@@ -1273,7 +1343,7 @@ async def update_prompt(config: SystemPromptConfig) -> Dict[str, Any]:
             f.write(f"model: {config.model}\n")
             f.write(f"temperature: {config.temperature}\n")
             f.write(f"top_p: {config.top_p}\n")
-            f.write(f"frecuency_penalty: {config.frecuency_penalty}\n")
+            f.write(f"frequency_penalty: {config.frequency_penalty}\n")
             f.write(f"presence_penalty: {config.presence_penalty}\n")
 
         return {
@@ -1289,6 +1359,11 @@ async def update_prompt(config: SystemPromptConfig) -> Dict[str, Any]:
             detail=f"Failed to update system prompt: {str(e)}"
         )
 
+
+
+# ============================================================================
+# SECTION 5: DATA MANAGEMENT (CSV)
+# ============================================================================
 
 @app.get("/get-agents-csv", response_class=PlainTextResponse)
 async def get_agents_csv() -> str:

@@ -3,7 +3,7 @@ import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import yaml
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from toon_format import encode, decode
 
 
@@ -143,7 +143,7 @@ Tu tarea es optimizar SOLO los {chunk_size} agentes en este grupo, manteniendo b
     return context
 
 
-def optimize_chunk_with_llm(
+async def optimize_chunk_with_llm(
     chunk_data: List[Dict[str, Any]],
     system_prompt: str,
     global_context: str,
@@ -153,7 +153,7 @@ def optimize_chunk_with_llm(
     use_toon: bool = True
 ) -> List[Dict[str, Any]]:
     """
-    Optimiza un chunk de agentes usando OpenAI API.
+    Optimiza un chunk de agentes usando OpenAI API (async).
 
     Args:
         chunk_data: Lista de agentes a optimizar (máximo 10)
@@ -170,7 +170,7 @@ def optimize_chunk_with_llm(
     Raises:
         Exception: Si la llamada a OpenAI falla o el response es inválido
     """
-    client = OpenAI(api_key=api_key)
+    client = AsyncOpenAI(api_key=api_key)
 
     # Convertir a TOON si está habilitado (reduce ~50% tokens)
     if use_toon:
@@ -194,8 +194,8 @@ INSTRUCCIONES:
 IMPORTANTE: Devuelve ÚNICAMENTE un array JSON válido con los agentes optimizados, sin explicaciones adicionales.
 """
 
-    # Llamar a OpenAI
-    response = client.chat.completions.create(
+    # Llamar a OpenAI (async)
+    response = await client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": "Eres un experto en optimización de turnos de call center. Respondes ÚNICAMENTE con JSON válido."},
